@@ -3,14 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ABC → MIDI（CDN importmap 方式）</title>
-    <script type="importmap">
-    {
-        "imports": {
-            "abcjs": "https://cdn.jsdelivr.net/npm/abcjs@6.4.1/dist/abcjs-basic.mjs"
-        }
-    }
-    </script>
+    <title>ABC → MIDI（シンプル static ファイル方式）</title>
+    <!-- ★ 同じディレクトリの abcjs-basic.min.js を読み込む ★ -->
+    <script src="abcjs-basic.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -60,13 +55,6 @@
             background: #f1f5f9;
             border: 1px solid #e2e8f0;
             flex-wrap: wrap;
-        }
-        #statusBox .badge {
-            font-size: 0.75rem;
-            background: #e2e8f0;
-            padding: 0.15rem 0.6rem;
-            border-radius: 20px;
-            color: #334155;
         }
         #statusBox.loading {
             background: #fef9c3;
@@ -206,20 +194,22 @@
         .footer a:hover {
             text-decoration: underline;
         }
-        .fallback-note {
+        .file-hint {
             margin-top: 1rem;
             padding: 0.75rem 1rem;
-            background: #fef9c3;
-            border: 1px solid #facc15;
+            background: #f0f9ff;
+            border: 1px solid #7dd3fc;
             border-radius: 8px;
             font-size: 0.9rem;
-            color: #713f12;
-            display: none;
+            color: #0369a1;
         }
-        .fallback-note.show {
-            display: block;
+        .file-hint code {
+            background: #e2e8f0;
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
         }
-        .fallback-note a {
+        .file-hint a {
             color: #2563eb;
         }
     </style>
@@ -229,7 +219,7 @@
     <div class="container">
 
         <h1>🎵 ABC → MIDI</h1>
-        <p class="sub">CDN から abcjs を確実に読み込む（importmap 方式）</p>
+        <p class="sub">シンプル static ファイル方式（確実に動作）</p>
 
         <!-- ステータス表示 -->
         <div id="statusBox" class="loading">
@@ -237,13 +227,11 @@
             <span id="statusText">ライブラリを読み込み中…</span>
         </div>
 
-        <!-- フォールバック表示（CDNが読めない場合） -->
-        <div id="fallbackNote" class="fallback-note">
-            ⚠️ CDN からの読み込みに失敗しました。
-            <a href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js" target="_blank">abcjs-basic.min.js</a>
-            をダウンロードして、このHTMLと同じフォルダに置き、下記のリンクをクリックして再読み込みしてください。
-            <br>
-            <button id="retryWithLocalBtn" style="margin-top:0.5rem;padding:0.3rem 1rem;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;">ローカルファイルで再試行</button>
+        <!-- ファイル配置案内 -->
+        <div class="file-hint">
+            📁 このページと同じフォルダに <code>abcjs-basic.min.js</code> を置いてください。<br>
+            ⚡ <a href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js" target="_blank">ダウンロードはこちら</a>
+            （右クリック → 「名前を付けて保存」）
         </div>
 
         <!-- ABC入力 -->
@@ -273,19 +261,16 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         <div id="message"></div>
 
         <div class="footer">
-            <span>🚀 CDN から abcjs を読み込み（importmap） • </span>
-            <span>GitHub Pages 対応</span>
+            <span>📄 静的ファイル読み込み（<code>abcjs-basic.min.js</code> を同梱）</span>
         </div>
 
     </div>
 
-    <!-- ★★★ メイン処理（ES Module） ★★★ -->
-    <script type="module">
+    <script>
         // ========================================================================
         //  設定
         // ========================================================================
 
-        // DOM
         const statusBox = document.getElementById('statusBox');
         const statusIcon = document.getElementById('statusIcon');
         const statusText = document.getElementById('statusText');
@@ -293,12 +278,9 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         const downloadLink = document.getElementById('downloadLink');
         const messageEl = document.getElementById('message');
         const abcInput = document.getElementById('abcInput');
-        const fallbackNote = document.getElementById('fallbackNote');
-        const retryWithLocalBtn = document.getElementById('retryWithLocalBtn');
 
         let abcjsLib = null;
 
-        // ----- メッセージ表示 -----
         function showMessage(type, text) {
             messageEl.className = 'show ' + type;
             messageEl.textContent = text;
@@ -309,99 +291,54 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             messageEl.textContent = '';
         }
 
-        // ----- ステータス -----
         function setStatus(state, msg) {
             statusBox.className = state;
-            const icons = {
-                'loading': '⏳',
-                'ready': '✅',
-                'error': '❌',
-            };
+            const icons = { 'loading': '⏳', 'ready': '✅', 'error': '❌' };
             statusIcon.textContent = icons[state] || 'ℹ️';
             statusText.textContent = msg;
         }
 
         // ========================================================================
-        //  abcjs を import で読み込む（これが一番確実）
+        //  ライブラリ読み込み確認（script タグで読み込まれるのを待つ）
         // ========================================================================
 
-        try {
-            // importmap で指定した "abcjs" から読み込み
-            const { default: abcjs } = await import('abcjs');
-            abcjsLib = abcjs;
-
-            // renderMidi が存在するか確認
-            if (typeof abcjsLib.renderMidi === 'function') {
+        function checkLibrary() {
+            // ★★★ ABCJS がグローバルに定義されているかチェック ★★★
+            const lib = window.ABCJS || window.abcjs;
+            if (lib && typeof lib.renderMidi === 'function') {
+                abcjsLib = lib;
                 setStatus('ready', '✅ abcjs ライブラリ読み込み完了！');
                 convertBtn.disabled = false;
-                fallbackNote.classList.remove('show');
-                showMessage('success', '🎉 ライブラリの読み込みに成功しました！ ABC譜を入力して変換してください。');
+                showMessage('success', '🎉 ライブラリの読み込みに成功しました！');
+                return true;
             } else {
-                setStatus('error', '❌ abcjs は読み込まれたが renderMidi がありません');
+                setStatus('error', '❌ abcjs が読み込まれていません');
                 convertBtn.disabled = true;
-                fallbackNote.classList.add('show');
-                showMessage('error', '⚠️ 読み込まれた abcjs に renderMidi が含まれていません。ファイルが正しくない可能性があります。');
+                showMessage('error', '⚠️ abcjs-basic.min.js が見つからないか、正しく読み込めませんでした。\nファイルが同じフォルダにあるか確認してください。');
+                return false;
             }
-
-        } catch (err) {
-            console.error('import エラー:', err);
-            setStatus('error', '❌ CDN からの読み込みに失敗しました');
-            convertBtn.disabled = true;
-            fallbackNote.classList.add('show');
-            showMessage('error', '⚠️ CDN から abcjs を読み込めませんでした。ネットワーク接続を確認するか、ファイルをローカルに配置してください。');
         }
 
-        // ========================================================================
-        //  ローカルファイルで再試行（フォールバック）
-        // ========================================================================
-
-        retryWithLocalBtn.addEventListener('click', async function() {
-            this.disabled = true;
-            this.textContent = '読み込み中…';
-            setStatus('loading', 'ローカルファイルを読み込み中…');
-
-            try {
-                // 同じディレクトリの abcjs-basic.min.js を読み込む
-                const response = await fetch('abcjs-basic.min.js');
-                if (!response.ok) throw new Error('ファイルが見つかりません（HTTP ' + response.status + '）');
-
-                const code = await response.text();
-
-                // eval で実行（このスコープはモジュール内なので safe）
-                const fn = new Function(code);
-                fn();
-
-                // グローバルに定義された ABCJS または abcjs を取得
-                const lib = window.ABCJS || window.abcjs;
-                if (lib && typeof lib.renderMidi === 'function') {
-                    abcjsLib = lib;
-                    setStatus('ready', '✅ ローカルファイルから読み込み成功！');
-                    convertBtn.disabled = false;
-                    fallbackNote.classList.remove('show');
-                    showMessage('success', '🎉 ローカルファイルの読み込みに成功しました！');
-                } else {
-                    setStatus('error', '❌ ローカルファイルに renderMidi がありません');
-                    showMessage('error', '⚠️ ファイルが正しい abcjs ライブラリではない可能性があります。');
-                }
-
-            } catch (err) {
-                console.error('ローカル読み込みエラー:', err);
-                setStatus('error', '❌ ローカルファイル読み込みエラー: ' + err.message);
-                showMessage('error', '❌ ローカルファイルの読み込みに失敗しました: ' + err.message);
-            }
-
-            this.disabled = false;
-            this.textContent = 'ローカルファイルで再試行';
+        // ページ読み込み後、500ms 待ってチェック（script タグの読み込み完了を待つ）
+        window.addEventListener('load', function() {
+            setTimeout(checkLibrary, 500);
+            // 念のため 1.5秒後にもう一度チェック
+            setTimeout(checkLibrary, 1500);
         });
+
+        // 手動再チェック用（デバッグ）
+        window.retryCheck = checkLibrary;
 
         // ========================================================================
         //  変換処理
         // ========================================================================
 
         convertBtn.addEventListener('click', function() {
+            // もう一度ライブラリを確認
             if (!abcjsLib || typeof abcjsLib.renderMidi !== 'function') {
-                showMessage('error', '❌ ライブラリが読み込まれていません。');
-                return;
+                if (!checkLibrary()) {
+                    return;
+                }
             }
 
             const abc = abcInput.value.trim();
@@ -460,8 +397,9 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             });
         });
 
-        console.log('✅ ABC → MIDI (importmap 方式) 起動');
-        console.log('📌 CDN から abcjs を読み込みます。失敗した場合はローカルファイルで再試行できます。');
+        console.log('✅ ABC → MIDI (static file) 起動');
+        console.log('📌 同じディレクトリに abcjs-basic.min.js を置いてください。');
+        console.log('📌 読み込み確認: retryCheck() をコンソールで実行できます。');
     </script>
 
 </body>
