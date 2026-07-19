@@ -3,7 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ABC → MIDI（ABCJS 対応版）</title>
+    <title>ABC → MIDI（CDN importmap 方式）</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "abcjs": "https://cdn.jsdelivr.net/npm/abcjs@6.4.1/dist/abcjs-basic.mjs"
+        }
+    }
+    </script>
     <style>
         * {
             box-sizing: border-box;
@@ -76,49 +83,8 @@
             border-color: #f87171;
             color: #7f1d1d;
         }
-        #statusBox.warning {
-            background: #ffedd5;
-            border-color: #fb923c;
-            color: #7c2d12;
-        }
         #statusIcon {
             font-size: 1.4rem;
-        }
-        .upload-area {
-            background: #f8fafc;
-            border: 2px dashed #cbd5e1;
-            border-radius: 12px;
-            padding: 1.5rem;
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
-        .upload-area label {
-            display: inline-block;
-            background: #3b82f6;
-            color: #fff;
-            padding: 0.6rem 1.8rem;
-            border-radius: 40px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        .upload-area label:hover {
-            background: #2563eb;
-        }
-        .upload-area input[type="file"] {
-            display: none;
-        }
-        .upload-area .hint {
-            margin-top: 0.5rem;
-            font-size: 0.85rem;
-            color: #64748b;
-        }
-        .upload-area .hint a {
-            color: #3b82f6;
-            text-decoration: none;
-        }
-        .upload-area .hint a:hover {
-            text-decoration: underline;
         }
         textarea {
             width: 100%;
@@ -205,13 +171,6 @@
         .btn-success:hover {
             background: #16a34a;
         }
-        .btn-danger {
-            background: #ef4444;
-            color: #fff;
-        }
-        .btn-danger:hover {
-            background: #dc2626;
-        }
         #message {
             margin-top: 1rem;
             padding: 0.75rem 1.25rem;
@@ -232,11 +191,6 @@
             color: #14532d;
             border: 1px solid #86efac;
         }
-        #message.info {
-            background: #dbeafe;
-            color: #1e3a8a;
-            border: 1px solid #93c5fd;
-        }
         .footer {
             margin-top: 2.5rem;
             padding-top: 1.2rem;
@@ -252,28 +206,21 @@
         .footer a:hover {
             text-decoration: underline;
         }
-        #debugInfo {
-            margin-top: 0.8rem;
-            padding: 0.5rem 1rem;
-            background: #f1f5f9;
+        .fallback-note {
+            margin-top: 1rem;
+            padding: 0.75rem 1rem;
+            background: #fef9c3;
+            border: 1px solid #facc15;
             border-radius: 8px;
-            font-family: monospace;
-            font-size: 0.8rem;
-            white-space: pre-wrap;
-            word-break: break-all;
+            font-size: 0.9rem;
+            color: #713f12;
             display: none;
-            max-height: 200px;
-            overflow-y: auto;
-            border: 1px solid #e2e8f0;
         }
-        #debugInfo.show {
+        .fallback-note.show {
             display: block;
         }
-        #abcjsIframe {
-            display: none;
-            width: 0;
-            height: 0;
-            border: none;
+        .fallback-note a {
+            color: #2563eb;
         }
     </style>
 </head>
@@ -282,23 +229,21 @@
     <div class="container">
 
         <h1>🎵 ABC → MIDI</h1>
-        <p class="sub">iframe 内で ABCJS を確実に読み込む（ABCJS 対応）</p>
+        <p class="sub">CDN から abcjs を確実に読み込む（importmap 方式）</p>
 
         <!-- ステータス表示 -->
         <div id="statusBox" class="loading">
             <span id="statusIcon">⏳</span>
-            <span id="statusText">初期化中…</span>
-            <span id="methodInfo" class="badge">方式: -</span>
+            <span id="statusText">ライブラリを読み込み中…</span>
         </div>
 
-        <!-- ファイルアップロードエリア -->
-        <div id="uploadArea" class="upload-area" style="display:none;">
-            <p style="font-weight:600; margin-bottom:0.5rem;">📂 abcjs ライブラリをアップロード</p>
-            <label for="fileInput">📤 abcjs-basic.min.js を選択</label>
-            <input type="file" id="fileInput" accept=".js">
-            <div class="hint">
-                ⚡ <a href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js" target="_blank">ダウンロードはこちら</a>
-            </div>
+        <!-- フォールバック表示（CDNが読めない場合） -->
+        <div id="fallbackNote" class="fallback-note">
+            ⚠️ CDN からの読み込みに失敗しました。
+            <a href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js" target="_blank">abcjs-basic.min.js</a>
+            をダウンロードして、このHTMLと同じフォルダに置き、下記のリンクをクリックして再読み込みしてください。
+            <br>
+            <button id="retryWithLocalBtn" style="margin-top:0.5rem;padding:0.3rem 1rem;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;">ローカルファイルで再試行</button>
         </div>
 
         <!-- ABC入力 -->
@@ -322,352 +267,154 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         <div class="actions">
             <button id="convertBtn" class="btn btn-primary" disabled>🔄 Convert to MIDI</button>
             <a id="downloadLink" class="btn btn-success" style="display:none;">⬇️ Download MIDI</a>
-            <button id="clearStorageBtn" class="btn btn-danger" style="display:none;">🗑️ 保存済みを削除</button>
-            <button id="retryBtn" class="btn btn-primary" style="background:#6b7280;display:none;">🔄 再試行</button>
         </div>
 
         <!-- メッセージ -->
         <div id="message"></div>
 
-        <!-- デバッグ情報 -->
-        <div id="debugInfo"></div>
-
-        <!-- iframe（非表示） -->
-        <iframe id="abcjsIframe"></iframe>
-
         <div class="footer">
-            <span>💾 ライブラリは localStorage に保存され、iframe 内で安全に読み込まれます</span>
+            <span>🚀 CDN から abcjs を読み込み（importmap） • </span>
+            <span>GitHub Pages 対応</span>
         </div>
 
     </div>
 
-    <script>
+    <!-- ★★★ メイン処理（ES Module） ★★★ -->
+    <script type="module">
         // ========================================================================
         //  設定
         // ========================================================================
-
-        const STORAGE_KEY = 'abcjs_library_code';
 
         // DOM
         const statusBox = document.getElementById('statusBox');
         const statusIcon = document.getElementById('statusIcon');
         const statusText = document.getElementById('statusText');
-        const methodInfo = document.getElementById('methodInfo');
-        const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
         const convertBtn = document.getElementById('convertBtn');
         const downloadLink = document.getElementById('downloadLink');
-        const clearStorageBtn = document.getElementById('clearStorageBtn');
-        const retryBtn = document.getElementById('retryBtn');
         const messageEl = document.getElementById('message');
         const abcInput = document.getElementById('abcInput');
-        const debugEl = document.getElementById('debugInfo');
-        const iframe = document.getElementById('abcjsIframe');
+        const fallbackNote = document.getElementById('fallbackNote');
+        const retryWithLocalBtn = document.getElementById('retryWithLocalBtn');
 
-        let libraryLoaded = false;
-        let loadMethod = '';
-
-        // ----- デバッグ -----
-        function debugLog(msg) {
-            try {
-                debugEl.textContent += msg + '\n';
-                debugEl.classList.add('show');
-            } catch (e) { /* 無視 */ }
-        }
-
-        function clearDebug() {
-            try {
-                debugEl.textContent = '';
-                debugEl.classList.remove('show');
-            } catch (e) { /* 無視 */ }
-        }
-
-        // ----- ステータス表示 -----
-        function setStatus(state, msg, method) {
-            try {
-                statusBox.className = state;
-                const icons = {
-                    'loading': '⏳',
-                    'ready': '✅',
-                    'error': '❌',
-                    'warning': '⚠️'
-                };
-                statusIcon.textContent = icons[state] || 'ℹ️';
-                statusText.textContent = msg;
-                if (method) {
-                    methodInfo.textContent = '方式: ' + method;
-                    methodInfo.style.display = 'inline';
-                } else {
-                    methodInfo.style.display = 'none';
-                }
-            } catch (e) { /* 無視 */ }
-        }
+        let abcjsLib = null;
 
         // ----- メッセージ表示 -----
         function showMessage(type, text) {
-            try {
-                messageEl.className = 'show ' + type;
-                messageEl.textContent = text;
-            } catch (e) { /* 無視 */ }
+            messageEl.className = 'show ' + type;
+            messageEl.textContent = text;
         }
 
         function hideMessage() {
-            try {
-                messageEl.className = '';
-                messageEl.textContent = '';
-            } catch (e) { /* 無視 */ }
+            messageEl.className = '';
+            messageEl.textContent = '';
         }
 
-        // ----- abcjs が使えるかチェック（abcjs または ABCJS） -----
-        function isAbcjsReady() {
-            try {
-                return (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function') ||
-                    (typeof ABCJS !== 'undefined' && typeof ABCJS.renderMidi === 'function');
-            } catch (e) { return false; }
-        }
-
-        // ----- 実際に使える abcjs オブジェクトを取得（ABCJS 優先） -----
-        function getAbcjs() {
-            try {
-                if (typeof ABCJS !== 'undefined' && typeof ABCJS.renderMidi === 'function') return ABCJS;
-                if (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function') return abcjs;
-            } catch (e) { /* 無視 */ }
-            return null;
+        // ----- ステータス -----
+        function setStatus(state, msg) {
+            statusBox.className = state;
+            const icons = {
+                'loading': '⏳',
+                'ready': '✅',
+                'error': '❌',
+            };
+            statusIcon.textContent = icons[state] || 'ℹ️';
+            statusText.textContent = msg;
         }
 
         // ========================================================================
-        //  iframe 方式（ABCJS に対応）
+        //  abcjs を import で読み込む（これが一番確実）
         // ========================================================================
 
-        function tryLoadWithIframe() {
-            return new Promise((resolve) => {
-                const code = localStorage.getItem(STORAGE_KEY);
-                if (!code) {
-                    debugLog('❌ iframe: localStorage にコードがありません');
-                    resolve(false);
-                    return;
-                }
-                debugLog('📦 iframe: コードを埋め込み中（サイズ: ' + code.length + ' 文字）');
-                setStatus('loading', 'iframe で読み込み中…', 'iframe');
+        try {
+            // importmap で指定した "abcjs" から読み込み
+            const { default: abcjs } = await import('abcjs');
+            abcjsLib = abcjs;
 
-                try {
-                    // iframe をリセット
-                    iframe.src = 'about:blank';
-                    iframe.onload = function() {
-                        try {
-                            const doc = iframe.contentDocument || iframe.contentWindow.document;
-                            if (!doc) {
-                                debugLog('❌ iframe: ドキュメントが取得できません');
-                                resolve(false);
-                                return;
-                            }
-
-                            // iframe 内にスクリプトを document.write で埋め込む（安全）
-                            doc.open();
-                            doc.write('<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>');
-                            doc.write('<script type="text/javascript">' + code + '<\/script>');
-                            doc.write('</body></html>');
-                            doc.close();
-
-                            debugLog('✅ iframe: document.write でスクリプトを埋め込みました');
-
-                            // 少し待ってから iframe のグローバルオブジェクトをチェック
-                            setTimeout(() => {
-                                try {
-                                    const iframeWin = iframe.contentWindow;
-                                    if (!iframeWin) {
-                                        debugLog('❌ iframe: contentWindow が取得できません');
-                                        resolve(false);
-                                        return;
-                                    }
-
-                                    // ★★★ ABCJS を優先的にチェック ★★★
-                                    let abcjsLib = null;
-                                    if (iframeWin.ABCJS && typeof iframeWin.ABCJS.renderMidi === 'function') {
-                                        abcjsLib = iframeWin.ABCJS;
-                                        debugLog('✅ iframe: ABCJS を検出しました（renderMidi あり）');
-                                    } else if (iframeWin.abcjs && typeof iframeWin.abcjs.renderMidi === 'function') {
-                                        abcjsLib = iframeWin.abcjs;
-                                        debugLog('✅ iframe: abcjs を検出しました（renderMidi あり）');
-                                    } else {
-                                        debugLog('⚠️ iframe: ABCJS/abcjs はあるが renderMidi がありません');
-                                        debugLog('   iframeWin.ABCJS = ' + typeof iframeWin.ABCJS);
-                                        debugLog('   iframeWin.abcjs = ' + typeof iframeWin.abcjs);
-                                        if (iframeWin.ABCJS) {
-                                            debugLog('   ABCJS.renderMidi = ' + typeof iframeWin.ABCJS.renderMidi);
-                                        }
-                                        resolve(false);
-                                        return;
-                                    }
-
-                                    // 親ページのグローバルにコピー
-                                    window.abcjs = abcjsLib;
-                                    window.ABCJS = abcjsLib;
-                                    libraryLoaded = true;
-                                    loadMethod = 'iframe (localStorage)';
-                                    setStatus('ready', 'ライブラリ読み込み完了（iframe）', 'iframe ✅');
-                                    debugLog('✅ iframe: abcjs/ABCJS を親ページにコピーしました');
-                                    resolve(true);
-
-                                } catch (e) {
-                                    debugLog('❌ iframe チェックエラー: ' + e.message);
-                                    resolve(false);
-                                }
-                            }, 300);
-                        } catch (e) {
-                            debugLog('❌ iframe onload エラー: ' + e.message);
-                            resolve(false);
-                        }
-                    };
-                    iframe.onerror = function() {
-                        debugLog('❌ iframe 読み込みエラー');
-                        resolve(false);
-                    };
-                    // リロードをトリガー（onload が発火する）
-                    iframe.src = 'about:blank';
-                } catch (e) {
-                    debugLog('❌ iframe 方式エラー: ' + e.message);
-                    resolve(false);
-                }
-            });
-        }
-
-        // ========================================================================
-        //  メイン初期化（iframe のみ使用）
-        // ========================================================================
-
-        async function initLibrary() {
-            clearDebug();
-            hideMessage();
-            convertBtn.disabled = true;
-            downloadLink.style.display = 'none';
-            clearStorageBtn.style.display = 'none';
-            retryBtn.style.display = 'none';
-            uploadArea.style.display = 'none';
-
-            // 既に abcjs が定義されている場合
-            if (isAbcjsReady()) {
-                libraryLoaded = true;
-                loadMethod = '既存（再読み込み）';
-                setStatus('ready', 'ライブラリは既に読み込まれています', '既存 ✅');
+            // renderMidi が存在するか確認
+            if (typeof abcjsLib.renderMidi === 'function') {
+                setStatus('ready', '✅ abcjs ライブラリ読み込み完了！');
                 convertBtn.disabled = false;
-                clearStorageBtn.style.display = localStorage.getItem(STORAGE_KEY) ? 'inline-flex' : 'none';
-                return;
-            }
-
-            const hasStored = localStorage.getItem(STORAGE_KEY) !== null;
-            if (!hasStored) {
-                setStatus('warning', 'ライブラリがありません。ファイルをアップロードしてください。', 'なし');
-                uploadArea.style.display = 'block';
+                fallbackNote.classList.remove('show');
+                showMessage('success', '🎉 ライブラリの読み込みに成功しました！ ABC譜を入力して変換してください。');
+            } else {
+                setStatus('error', '❌ abcjs は読み込まれたが renderMidi がありません');
                 convertBtn.disabled = true;
-                clearStorageBtn.style.display = 'none';
-                retryBtn.style.display = 'none';
-                return;
+                fallbackNote.classList.add('show');
+                showMessage('error', '⚠️ 読み込まれた abcjs に renderMidi が含まれていません。ファイルが正しくない可能性があります。');
             }
 
-            // ---- iframe 方式のみ試行 ----
-            const ok = await tryLoadWithIframe();
-            if (ok) {
-                convertBtn.disabled = false;
-                clearStorageBtn.style.display = 'inline-flex';
-                uploadArea.style.display = 'none';
-                return;
-            }
-
-            // ---- 失敗 ----
-            setStatus('error', 'iframe での読み込みに失敗しました。ファイルを再アップロードしてください。', '❌ 失敗');
-            uploadArea.style.display = 'block';
+        } catch (err) {
+            console.error('import エラー:', err);
+            setStatus('error', '❌ CDN からの読み込みに失敗しました');
             convertBtn.disabled = true;
-            retryBtn.style.display = 'inline-flex';
-            clearStorageBtn.style.display = 'none';
-            showMessage('error', '❌ ライブラリを読み込めませんでした。下の「ファイルを選択」から再アップロードしてください。');
+            fallbackNote.classList.add('show');
+            showMessage('error', '⚠️ CDN から abcjs を読み込めませんでした。ネットワーク接続を確認するか、ファイルをローカルに配置してください。');
         }
 
         // ========================================================================
-        //  ファイルアップロード
+        //  ローカルファイルで再試行（フォールバック）
         // ========================================================================
 
-        function handleFileUpload(file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const code = e.target.result;
-                    debugLog('📄 アップロードファイル読み込み（サイズ: ' + code.length + ' 文字）');
+        retryWithLocalBtn.addEventListener('click', async function() {
+            this.disabled = true;
+            this.textContent = '読み込み中…';
+            setStatus('loading', 'ローカルファイルを読み込み中…');
 
-                    if (!code.includes('abcjs')) {
-                        showMessage('error', '⚠️ abcjs ライブラリではないようです。');
-                        return;
-                    }
+            try {
+                // 同じディレクトリの abcjs-basic.min.js を読み込む
+                const response = await fetch('abcjs-basic.min.js');
+                if (!response.ok) throw new Error('ファイルが見つかりません（HTTP ' + response.status + '）');
 
-                    localStorage.setItem(STORAGE_KEY, code);
-                    debugLog('💾 localStorage に保存しました');
-                    showMessage('info', '💾 保存しました。ライブラリを読み込み中…');
+                const code = await response.text();
 
-                    // 読み込みを開始
-                    initLibrary().then(() => {
-                        if (isAbcjsReady()) {
-                            showMessage('success', '✅ ライブラリの読み込みに成功しました！');
-                            uploadArea.style.display = 'none';
-                        } else {
-                            showMessage('error', '❌ 保存はできましたが、読み込みに失敗しました。');
-                        }
-                    });
+                // eval で実行（このスコープはモジュール内なので safe）
+                const fn = new Function(code);
+                fn();
 
-                } catch (err) {
-                    showMessage('error', '❌ ファイル処理エラー: ' + err.message);
-                    debugLog('❌ 例外: ' + err.message);
+                // グローバルに定義された ABCJS または abcjs を取得
+                const lib = window.ABCJS || window.abcjs;
+                if (lib && typeof lib.renderMidi === 'function') {
+                    abcjsLib = lib;
+                    setStatus('ready', '✅ ローカルファイルから読み込み成功！');
+                    convertBtn.disabled = false;
+                    fallbackNote.classList.remove('show');
+                    showMessage('success', '🎉 ローカルファイルの読み込みに成功しました！');
+                } else {
+                    setStatus('error', '❌ ローカルファイルに renderMidi がありません');
+                    showMessage('error', '⚠️ ファイルが正しい abcjs ライブラリではない可能性があります。');
                 }
-            };
-            reader.onerror = function() {
-                showMessage('error', '❌ ファイル読み込みエラー');
-            };
-            reader.readAsText(file);
-        }
+
+            } catch (err) {
+                console.error('ローカル読み込みエラー:', err);
+                setStatus('error', '❌ ローカルファイル読み込みエラー: ' + err.message);
+                showMessage('error', '❌ ローカルファイルの読み込みに失敗しました: ' + err.message);
+            }
+
+            this.disabled = false;
+            this.textContent = 'ローカルファイルで再試行';
+        });
 
         // ========================================================================
-        //  イベントリスナー
+        //  変換処理
         // ========================================================================
-
-        fileInput.addEventListener('change', function(e) {
-            if (this.files && this.files.length > 0) {
-                handleFileUpload(this.files[0]);
-                this.value = '';
-            }
-        });
-
-        clearStorageBtn.addEventListener('click', function() {
-            if (confirm('保存されているライブラリを削除しますか？')) {
-                localStorage.removeItem(STORAGE_KEY);
-                clearStorageBtn.style.display = 'none';
-                setStatus('warning', '保存済みライブラリを削除しました', '削除');
-                showMessage('info', '🗑️ 保存データを削除しました。ページを再読み込みしてください。');
-                location.reload();
-            }
-        });
-
-        retryBtn.addEventListener('click', function() {
-            retryBtn.style.display = 'none';
-            initLibrary();
-        });
 
         convertBtn.addEventListener('click', function() {
-            const abcjsLib = getAbcjs();
-            if (!abcjsLib) {
+            if (!abcjsLib || typeof abcjsLib.renderMidi !== 'function') {
                 showMessage('error', '❌ ライブラリが読み込まれていません。');
                 return;
             }
 
-            const abcString = abcInput.value.trim();
+            const abc = abcInput.value.trim();
             hideMessage();
             downloadLink.style.display = 'none';
 
-            if (abcString === '') {
+            if (abc === '') {
                 showMessage('error', '⚠️ ABC譜が空です。');
                 return;
             }
 
             try {
-                const midiData = abcjsLib.renderMidi(abcString);
+                const midiData = abcjsLib.renderMidi(abc);
                 if (!midiData || midiData.length === 0) {
                     throw new Error('MIDIデータが空です。文法を確認してください。');
                 }
@@ -713,18 +460,8 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             });
         });
 
-        // ========================================================================
-        //  起動
-        // ========================================================================
-
-        try {
-            initLibrary();
-            console.log('✅ ABCJS 対応版で起動');
-        } catch (e) {
-            console.error('起動エラー:', e);
-            setStatus('error', '起動エラー: ' + e.message, 'エラー');
-            showMessage('error', '❌ ページの初期化中にエラーが発生しました: ' + e.message);
-        }
+        console.log('✅ ABC → MIDI (importmap 方式) 起動');
+        console.log('📌 CDN から abcjs を読み込みます。失敗した場合はローカルファイルで再試行できます。');
     </script>
 
 </body>
