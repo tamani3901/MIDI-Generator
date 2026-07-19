@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ABC → MIDI コンバーター</title>
-    <!-- ★ オンラインから自動で読み込むように変更（ダウンロード不要） ★ -->
+    <!-- ★ オンラインから自動で読み込む（ダウンロード不要） ★ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js"></script>
     <style>
         * {
@@ -262,11 +262,10 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             statusText.textContent = msg;
         }
 
-        // ライブラリ読み込み確認
+        // ライブラリ読み込み確認（★ renderMidi をチェック ★）
         function checkLibrary() {
             const lib = window.ABCJS || window.abcjs;
-            // synthオブジェクトが存在するかチェック
-            if (lib && lib.synth) {
+            if (lib && typeof lib.renderMidi === 'function') {
                 abcjsLib = lib;
                 setStatus('ready', '✅ abcjs ライブラリ読み込み完了！');
                 convertBtn.disabled = false;
@@ -285,10 +284,13 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         });
 
         // ========================================================================
-        //  変換処理 (正しいAPIに修正)
+        //  変換処理（★ renderMidi を使う ★）
         // ========================================================================
         convertBtn.addEventListener('click', function() {
-            if (!abcjsLib) return;
+            if (!abcjsLib) {
+                checkLibrary();
+                return;
+            }
 
             const abc = abcInput.value.trim();
             hideMessage();
@@ -300,15 +302,13 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             }
 
             try {
-                // ★ 正しいMIDIファイル生成APIに変更 ★
-                // abcjs.synth.getMidiFile(abcText, options) を使用します
-                const midiResult = abcjsLib.synth.getMidiFile(abc, {
-                    lineEnd: "\n"
-                });
+                // ★ renderMidi で MIDI データを生成 ★
+                const midiData = abcjsLib.renderMidi(abc);
+                if (!midiData || midiData.length === 0) {
+                    throw new Error('MIDIデータが空です。ABC文法を確認してください。');
+                }
 
-                // 生成されたデータは[Uint8Array]などのバイナリ配列、またはBase64で返ってくるケースがあるため
-                // Blobに変換してダウンロードURLを作ります
-                const blob = new Blob([midiResult], { type: 'audio/midi' });
+                const blob = new Blob([midiData], { type: 'audio/midi' });
                 const url = URL.createObjectURL(blob);
 
                 downloadLink.href = url;
@@ -317,6 +317,8 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 downloadLink.textContent = '⬇️ Download MIDI';
 
                 showMessage('success', '✅ 変換成功！ ダウンロードボタンをクリックしてください。');
+
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
 
             } catch (e) {
                 console.error(e);
@@ -346,5 +348,6 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             });
         });
     </script>
+
 </body>
 </html>
