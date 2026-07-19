@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ABC → MIDI（シンプル static ファイル方式）</title>
-    <!-- ★ 同じディレクトリの abcjs-basic.min.js を読み込む ★ -->
-    <script src="abcjs-basic.min.js"></script>
+    <title>ABC → MIDI コンバーター</title>
+    <!-- ★ オンラインから自動で読み込むように変更（ダウンロード不要） ★ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -187,31 +187,6 @@
             font-size: 0.85rem;
             color: #64748b;
         }
-        .footer a {
-            color: #3b82f6;
-            text-decoration: none;
-        }
-        .footer a:hover {
-            text-decoration: underline;
-        }
-        .file-hint {
-            margin-top: 1rem;
-            padding: 0.75rem 1rem;
-            background: #f0f9ff;
-            border: 1px solid #7dd3fc;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            color: #0369a1;
-        }
-        .file-hint code {
-            background: #e2e8f0;
-            padding: 0.1rem 0.4rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-        }
-        .file-hint a {
-            color: #2563eb;
-        }
     </style>
 </head>
 <body>
@@ -219,19 +194,12 @@
     <div class="container">
 
         <h1>🎵 ABC → MIDI</h1>
-        <p class="sub">シンプル static ファイル方式（確実に動作）</p>
+        <p class="sub">オンラインCDN方式（確実に動作）</p>
 
         <!-- ステータス表示 -->
         <div id="statusBox" class="loading">
             <span id="statusIcon">⏳</span>
             <span id="statusText">ライブラリを読み込み中…</span>
-        </div>
-
-        <!-- ファイル配置案内 -->
-        <div class="file-hint">
-            📁 このページと同じフォルダに <code>abcjs-basic.min.js</code> を置いてください。<br>
-            ⚡ <a href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js" target="_blank">ダウンロードはこちら</a>
-            （右クリック → 「名前を付けて保存」）
         </div>
 
         <!-- ABC入力 -->
@@ -261,16 +229,12 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         <div id="message"></div>
 
         <div class="footer">
-            <span>📄 静的ファイル読み込み（<code>abcjs-basic.min.js</code> を同梱）</span>
+            <span>📄 ABCJS CDN Cloud loading</span>
         </div>
 
     </div>
 
     <script>
-        // ========================================================================
-        //  設定
-        // ========================================================================
-
         const statusBox = document.getElementById('statusBox');
         const statusIcon = document.getElementById('statusIcon');
         const statusText = document.getElementById('statusText');
@@ -298,14 +262,11 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             statusText.textContent = msg;
         }
 
-        // ========================================================================
-        //  ライブラリ読み込み確認（script タグで読み込まれるのを待つ）
-        // ========================================================================
-
+        // ライブラリ読み込み確認
         function checkLibrary() {
-            // ★★★ ABCJS がグローバルに定義されているかチェック ★★★
             const lib = window.ABCJS || window.abcjs;
-            if (lib && typeof lib.renderMidi === 'function') {
+            // synthオブジェクトが存在するかチェック
+            if (lib && lib.synth) {
                 abcjsLib = lib;
                 setStatus('ready', '✅ abcjs ライブラリ読み込み完了！');
                 convertBtn.disabled = false;
@@ -314,32 +275,20 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             } else {
                 setStatus('error', '❌ abcjs が読み込まれていません');
                 convertBtn.disabled = true;
-                showMessage('error', '⚠️ abcjs-basic.min.js が見つからないか、正しく読み込めませんでした。\nファイルが同じフォルダにあるか確認してください。');
+                showMessage('error', '⚠️ abcjsライブラリが正しく読み込めませんでした。ネット接続を確認してください。');
                 return false;
             }
         }
 
-        // ページ読み込み後、500ms 待ってチェック（script タグの読み込み完了を待つ）
         window.addEventListener('load', function() {
-            setTimeout(checkLibrary, 500);
-            // 念のため 1.5秒後にもう一度チェック
-            setTimeout(checkLibrary, 1500);
+            setTimeout(checkLibrary, 300);
         });
 
-        // 手動再チェック用（デバッグ）
-        window.retryCheck = checkLibrary;
-
         // ========================================================================
-        //  変換処理
+        //  変換処理 (正しいAPIに修正)
         // ========================================================================
-
         convertBtn.addEventListener('click', function() {
-            // もう一度ライブラリを確認
-            if (!abcjsLib || typeof abcjsLib.renderMidi !== 'function') {
-                if (!checkLibrary()) {
-                    return;
-                }
-            }
+            if (!abcjsLib) return;
 
             const abc = abcInput.value.trim();
             hideMessage();
@@ -351,12 +300,15 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             }
 
             try {
-                const midiData = abcjsLib.renderMidi(abc);
-                if (!midiData || midiData.length === 0) {
-                    throw new Error('MIDIデータが空です。文法を確認してください。');
-                }
+                // ★ 正しいMIDIファイル生成APIに変更 ★
+                // abcjs.synth.getMidiFile(abcText, options) を使用します
+                const midiResult = abcjsLib.synth.getMidiFile(abc, {
+                    lineEnd: "\n"
+                });
 
-                const blob = new Blob([midiData], { type: 'audio/midi' });
+                // 生成されたデータは[Uint8Array]などのバイナリ配列、またはBase64で返ってくるケースがあるため
+                // Blobに変換してダウンロードURLを作ります
+                const blob = new Blob([midiResult], { type: 'audio/midi' });
                 const url = URL.createObjectURL(blob);
 
                 downloadLink.href = url;
@@ -364,20 +316,17 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 downloadLink.style.display = 'inline-flex';
                 downloadLink.textContent = '⬇️ Download MIDI';
 
-                showMessage('success', '✅ 変換成功！ ダウンロードリンクが表示されました。');
-
-                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                showMessage('success', '✅ 変換成功！ ダウンロードボタンをクリックしてください。');
 
             } catch (e) {
                 console.error(e);
-                showMessage('error', '❌ 変換エラー: ' + (e.message || '不明'));
+                showMessage('error', '❌ 変換エラー: ' + (e.message || '不明なエラーが発生しました。'));
             }
         });
 
         // ========================================================================
-        //  サンプル
+        //  サンプルデータ
         // ========================================================================
-
         const SAMPLES = {
             twinkle: `X:1\nT:きらきら星\nM:4/4\nL:1/8\nK:C\nC C G G | A A G2 | F F E E | D D C2 |`,
             scale: `X:1\nT:音階\nM:4/4\nL:1/8\nK:C\nC D E F | G A B c | c B A G | F E D C |`,
@@ -396,11 +345,6 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 }
             });
         });
-
-        console.log('✅ ABC → MIDI (static file) 起動');
-        console.log('📌 同じディレクトリに abcjs-basic.min.js を置いてください。');
-        console.log('📌 読み込み確認: retryCheck() をコンソールで実行できます。');
     </script>
-
 </body>
 </html>
