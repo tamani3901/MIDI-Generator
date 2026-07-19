@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ABC → MIDI（iframe 確実読み込み版）</title>
+    <title>ABC → MIDI（ABCJS 対応版）</title>
     <style>
         * {
             box-sizing: border-box;
@@ -282,7 +282,7 @@
     <div class="container">
 
         <h1>🎵 ABC → MIDI</h1>
-        <p class="sub">iframe 内で確実に abcjs を読み込む（ページは壊れません）</p>
+        <p class="sub">iframe 内で ABCJS を確実に読み込む（ABCJS 対応）</p>
 
         <!-- ステータス表示 -->
         <div id="statusBox" class="loading">
@@ -418,7 +418,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             } catch (e) { /* 無視 */ }
         }
 
-        // ----- abcjs が使えるかチェック -----
+        // ----- abcjs が使えるかチェック（abcjs または ABCJS） -----
         function isAbcjsReady() {
             try {
                 return (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function') ||
@@ -426,17 +426,17 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             } catch (e) { return false; }
         }
 
-        // ----- 実際に使える abcjs オブジェクトを取得 -----
+        // ----- 実際に使える abcjs オブジェクトを取得（ABCJS 優先） -----
         function getAbcjs() {
             try {
-                if (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function') return abcjs;
                 if (typeof ABCJS !== 'undefined' && typeof ABCJS.renderMidi === 'function') return ABCJS;
+                if (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function') return abcjs;
             } catch (e) { /* 無視 */ }
             return null;
         }
 
         // ========================================================================
-        //  iframe 方式：最も確実な読み込み
+        //  iframe 方式（ABCJS に対応）
         // ========================================================================
 
         function tryLoadWithIframe() {
@@ -481,23 +481,34 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                                         return;
                                     }
 
-                                    // iframe 内の abcjs を取得
-                                    let abcjsLib = iframeWin.abcjs || iframeWin.ABCJS;
-                                    if (abcjsLib && typeof abcjsLib.renderMidi === 'function') {
-                                        // 親ページのグローバルにコピー
-                                        window.abcjs = abcjsLib;
-                                        window.ABCJS = abcjsLib;
-                                        libraryLoaded = true;
-                                        loadMethod = 'iframe (localStorage)';
-                                        setStatus('ready', 'ライブラリ読み込み完了（iframe）', 'iframe ✅');
-                                        debugLog('✅ iframe: abcjs を親ページにコピーしました');
-                                        resolve(true);
+                                    // ★★★ ABCJS を優先的にチェック ★★★
+                                    let abcjsLib = null;
+                                    if (iframeWin.ABCJS && typeof iframeWin.ABCJS.renderMidi === 'function') {
+                                        abcjsLib = iframeWin.ABCJS;
+                                        debugLog('✅ iframe: ABCJS を検出しました（renderMidi あり）');
+                                    } else if (iframeWin.abcjs && typeof iframeWin.abcjs.renderMidi === 'function') {
+                                        abcjsLib = iframeWin.abcjs;
+                                        debugLog('✅ iframe: abcjs を検出しました（renderMidi あり）');
                                     } else {
-                                        debugLog('⚠️ iframe: 読み込まれたが abcjs が未定義');
-                                        debugLog('   iframeWin.abcjs = ' + typeof iframeWin.abcjs);
+                                        debugLog('⚠️ iframe: ABCJS/abcjs はあるが renderMidi がありません');
                                         debugLog('   iframeWin.ABCJS = ' + typeof iframeWin.ABCJS);
+                                        debugLog('   iframeWin.abcjs = ' + typeof iframeWin.abcjs);
+                                        if (iframeWin.ABCJS) {
+                                            debugLog('   ABCJS.renderMidi = ' + typeof iframeWin.ABCJS.renderMidi);
+                                        }
                                         resolve(false);
+                                        return;
                                     }
+
+                                    // 親ページのグローバルにコピー
+                                    window.abcjs = abcjsLib;
+                                    window.ABCJS = abcjsLib;
+                                    libraryLoaded = true;
+                                    loadMethod = 'iframe (localStorage)';
+                                    setStatus('ready', 'ライブラリ読み込み完了（iframe）', 'iframe ✅');
+                                    debugLog('✅ iframe: abcjs/ABCJS を親ページにコピーしました');
+                                    resolve(true);
+
                                 } catch (e) {
                                     debugLog('❌ iframe チェックエラー: ' + e.message);
                                     resolve(false);
@@ -646,7 +657,6 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 return;
             }
 
-            const abc = abcjsLib.parse ? abcInput.value : abcInput.value; // 念のため
             const abcString = abcInput.value.trim();
             hideMessage();
             downloadLink.style.display = 'none';
@@ -709,7 +719,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
 
         try {
             initLibrary();
-            console.log('✅ iframe 方式で起動（ページは壊れません）');
+            console.log('✅ ABCJS 対応版で起動');
         } catch (e) {
             console.error('起動エラー:', e);
             setStatus('error', '起動エラー: ' + e.message, 'エラー');
