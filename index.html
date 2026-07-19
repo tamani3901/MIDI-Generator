@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ABC → MIDI（安全・確実読み込み版）</title>
+    <title>ABC → MIDI（iframe 確実読み込み版）</title>
     <style>
         * {
             box-sizing: border-box;
@@ -269,9 +269,11 @@
         #debugInfo.show {
             display: block;
         }
-        .error-detail {
-            color: #dc3545;
-            font-weight: bold;
+        #abcjsIframe {
+            display: none;
+            width: 0;
+            height: 0;
+            border: none;
         }
     </style>
 </head>
@@ -280,7 +282,7 @@
     <div class="container">
 
         <h1>🎵 ABC → MIDI</h1>
-        <p class="sub">安全な読み込み方式（真っ白になりません）</p>
+        <p class="sub">iframe 内で確実に abcjs を読み込む（ページは壊れません）</p>
 
         <!-- ステータス表示 -->
         <div id="statusBox" class="loading">
@@ -330,8 +332,11 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         <!-- デバッグ情報 -->
         <div id="debugInfo"></div>
 
+        <!-- iframe（非表示） -->
+        <iframe id="abcjsIframe"></iframe>
+
         <div class="footer">
-            <span>💾 ライブラリは localStorage に保存され、安全な方法で読み込まれます</span>
+            <span>💾 ライブラリは localStorage に保存され、iframe 内で安全に読み込まれます</span>
         </div>
 
     </div>
@@ -357,11 +362,12 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         const messageEl = document.getElementById('message');
         const abcInput = document.getElementById('abcInput');
         const debugEl = document.getElementById('debugInfo');
+        const iframe = document.getElementById('abcjsIframe');
 
         let libraryLoaded = false;
         let loadMethod = '';
 
-        // ----- デバッグ（安全に出力） -----
+        // ----- デバッグ -----
         function debugLog(msg) {
             try {
                 debugEl.textContent += msg + '\n';
@@ -412,7 +418,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             } catch (e) { /* 無視 */ }
         }
 
-        // ----- abcjs が使えるかチェック（window.ABCJS も含めて） -----
+        // ----- abcjs が使えるかチェック -----
         function isAbcjsReady() {
             try {
                 return (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function') ||
@@ -430,131 +436,93 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         }
 
         // ========================================================================
-        //  読み込み方式（document.write は使わない）
+        //  iframe 方式：最も確実な読み込み
         // ========================================================================
 
-        // 方式1: script.textContent に直接埋め込む
-        function tryLoadWithTextContent() {
+        function tryLoadWithIframe() {
             return new Promise((resolve) => {
                 const code = localStorage.getItem(STORAGE_KEY);
                 if (!code) {
-                    debugLog('❌ textContent: localStorage にコードがありません');
+                    debugLog('❌ iframe: localStorage にコードがありません');
                     resolve(false);
                     return;
                 }
-                debugLog('📦 textContent: コードを埋め込み中（サイズ: ' + code.length + ' 文字）');
-                setStatus('loading', 'textContent 方式を試行中…', 'textContent');
+                debugLog('📦 iframe: コードを埋め込み中（サイズ: ' + code.length + ' 文字）');
+                setStatus('loading', 'iframe で読み込み中…', 'iframe');
 
                 try {
-                    // 既存の abcjs スクリプトがあれば削除（競合防止）
-                    const oldScripts = document.querySelectorAll('script[data-abcjs]');
-                    oldScripts.forEach(s => s.remove());
+                    // iframe をリセット
+                    iframe.src = 'about:blank';
+                    iframe.onload = function() {
+                        try {
+                            const doc = iframe.contentDocument || iframe.contentWindow.document;
+                            if (!doc) {
+                                debugLog('❌ iframe: ドキュメントが取得できません');
+                                resolve(false);
+                                return;
+                            }
 
-                    const script = document.createElement('script');
-                    script.textContent = code;
-                    script.setAttribute('data-abcjs', 'true');
-                    script.type = 'text/javascript';
-                    document.head.appendChild(script);
-                    debugLog('✅ textContent: script 要素を追加しました');
+                            // iframe 内にスクリプトを document.write で埋め込む（安全）
+                            doc.open();
+                            doc.write('<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>');
+                            doc.write('<script type="text/javascript">' + code + '<\/script>');
+                            doc.write('</body></html>');
+                            doc.close();
 
-                    // 即座にチェック
-                    setTimeout(() => {
-                        if (isAbcjsReady()) {
-                            libraryLoaded = true;
-                            loadMethod = 'textContent';
-                            setStatus('ready', 'ライブラリ読み込み完了（textContent）', 'textContent ✅');
-                            resolve(true);
-                        } else {
-                            debugLog('⚠️ textContent: 実行後も abcjs が未定義');
+                            debugLog('✅ iframe: document.write でスクリプトを埋め込みました');
+
+                            // 少し待ってから iframe のグローバルオブジェクトをチェック
+                            setTimeout(() => {
+                                try {
+                                    const iframeWin = iframe.contentWindow;
+                                    if (!iframeWin) {
+                                        debugLog('❌ iframe: contentWindow が取得できません');
+                                        resolve(false);
+                                        return;
+                                    }
+
+                                    // iframe 内の abcjs を取得
+                                    let abcjsLib = iframeWin.abcjs || iframeWin.ABCJS;
+                                    if (abcjsLib && typeof abcjsLib.renderMidi === 'function') {
+                                        // 親ページのグローバルにコピー
+                                        window.abcjs = abcjsLib;
+                                        window.ABCJS = abcjsLib;
+                                        libraryLoaded = true;
+                                        loadMethod = 'iframe (localStorage)';
+                                        setStatus('ready', 'ライブラリ読み込み完了（iframe）', 'iframe ✅');
+                                        debugLog('✅ iframe: abcjs を親ページにコピーしました');
+                                        resolve(true);
+                                    } else {
+                                        debugLog('⚠️ iframe: 読み込まれたが abcjs が未定義');
+                                        debugLog('   iframeWin.abcjs = ' + typeof iframeWin.abcjs);
+                                        debugLog('   iframeWin.ABCJS = ' + typeof iframeWin.ABCJS);
+                                        resolve(false);
+                                    }
+                                } catch (e) {
+                                    debugLog('❌ iframe チェックエラー: ' + e.message);
+                                    resolve(false);
+                                }
+                            }, 300);
+                        } catch (e) {
+                            debugLog('❌ iframe onload エラー: ' + e.message);
                             resolve(false);
                         }
-                    }, 200);
+                    };
+                    iframe.onerror = function() {
+                        debugLog('❌ iframe 読み込みエラー');
+                        resolve(false);
+                    };
+                    // リロードをトリガー（onload が発火する）
+                    iframe.src = 'about:blank';
                 } catch (e) {
-                    debugLog('❌ textContent エラー: ' + e.message);
-                    resolve(false);
-                }
-            });
-        }
-
-        // 方式2: window.eval で実行
-        function tryLoadWithEval() {
-            return new Promise((resolve) => {
-                const code = localStorage.getItem(STORAGE_KEY);
-                if (!code) {
-                    debugLog('❌ eval: localStorage にコードがありません');
-                    resolve(false);
-                    return;
-                }
-                debugLog('📦 eval: 実行中（サイズ: ' + code.length + ' 文字）');
-                setStatus('loading', 'eval 方式を試行中…', 'eval');
-
-                try {
-                    // 既存の abcjs を削除（グローバルから）
-                    try { delete window.abcjs; } catch (e) { /* 無視 */ }
-                    try { delete window.ABCJS; } catch (e) { /* 無視 */ }
-
-                    window.eval(code);
-                    debugLog('✅ eval: 実行完了');
-
-                    setTimeout(() => {
-                        if (isAbcjsReady()) {
-                            libraryLoaded = true;
-                            loadMethod = 'eval';
-                            setStatus('ready', 'ライブラリ読み込み完了（eval）', 'eval ✅');
-                            resolve(true);
-                        } else {
-                            debugLog('⚠️ eval: 実行後も abcjs が未定義');
-                            resolve(false);
-                        }
-                    }, 200);
-                } catch (e) {
-                    debugLog('❌ eval エラー: ' + e.message);
-                    resolve(false);
-                }
-            });
-        }
-
-        // 方式3: new Function() で実行（eval より厳密）
-        function tryLoadWithFunction() {
-            return new Promise((resolve) => {
-                const code = localStorage.getItem(STORAGE_KEY);
-                if (!code) {
-                    debugLog('❌ Function: localStorage にコードがありません');
-                    resolve(false);
-                    return;
-                }
-                debugLog('📦 Function: 実行中（サイズ: ' + code.length + ' 文字）');
-                setStatus('loading', 'Function 方式を試行中…', 'Function');
-
-                try {
-                    // 既存の abcjs を削除
-                    try { delete window.abcjs; } catch (e) { /* 無視 */ }
-                    try { delete window.ABCJS; } catch (e) { /* 無視 */ }
-
-                    const fn = new Function(code);
-                    fn();
-                    debugLog('✅ Function: 実行完了');
-
-                    setTimeout(() => {
-                        if (isAbcjsReady()) {
-                            libraryLoaded = true;
-                            loadMethod = 'Function';
-                            setStatus('ready', 'ライブラリ読み込み完了（Function）', 'Function ✅');
-                            resolve(true);
-                        } else {
-                            debugLog('⚠️ Function: 実行後も abcjs が未定義');
-                            resolve(false);
-                        }
-                    }, 200);
-                } catch (e) {
-                    debugLog('❌ Function エラー: ' + e.message);
+                    debugLog('❌ iframe 方式エラー: ' + e.message);
                     resolve(false);
                 }
             });
         }
 
         // ========================================================================
-        //  メイン初期化（順番に試行、どれか成功すれば終了）
+        //  メイン初期化（iframe のみ使用）
         // ========================================================================
 
         async function initLibrary() {
@@ -586,35 +554,17 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 return;
             }
 
-            // ---- 方式1: textContent ----
-            const ok1 = await tryLoadWithTextContent();
-            if (ok1) {
+            // ---- iframe 方式のみ試行 ----
+            const ok = await tryLoadWithIframe();
+            if (ok) {
                 convertBtn.disabled = false;
                 clearStorageBtn.style.display = 'inline-flex';
                 uploadArea.style.display = 'none';
                 return;
             }
 
-            // ---- 方式2: eval ----
-            const ok2 = await tryLoadWithEval();
-            if (ok2) {
-                convertBtn.disabled = false;
-                clearStorageBtn.style.display = 'inline-flex';
-                uploadArea.style.display = 'none';
-                return;
-            }
-
-            // ---- 方式3: Function ----
-            const ok3 = await tryLoadWithFunction();
-            if (ok3) {
-                convertBtn.disabled = false;
-                clearStorageBtn.style.display = 'inline-flex';
-                uploadArea.style.display = 'none';
-                return;
-            }
-
-            // ---- 全て失敗 ----
-            setStatus('error', '全ての読み込み方式が失敗しました。ファイルを再アップロードしてください。', '❌ 全滅');
+            // ---- 失敗 ----
+            setStatus('error', 'iframe での読み込みに失敗しました。ファイルを再アップロードしてください。', '❌ 失敗');
             uploadArea.style.display = 'block';
             convertBtn.disabled = true;
             retryBtn.style.display = 'inline-flex';
@@ -680,7 +630,6 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 clearStorageBtn.style.display = 'none';
                 setStatus('warning', '保存済みライブラリを削除しました', '削除');
                 showMessage('info', '🗑️ 保存データを削除しました。ページを再読み込みしてください。');
-                // ページをリロードしてリセット
                 location.reload();
             }
         });
@@ -697,17 +646,18 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 return;
             }
 
-            const abc = abcInput.value.trim();
+            const abc = abcjsLib.parse ? abcInput.value : abcInput.value; // 念のため
+            const abcString = abcInput.value.trim();
             hideMessage();
             downloadLink.style.display = 'none';
 
-            if (abc === '') {
+            if (abcString === '') {
                 showMessage('error', '⚠️ ABC譜が空です。');
                 return;
             }
 
             try {
-                const midiData = abcjsLib.renderMidi(abc);
+                const midiData = abcjsLib.renderMidi(abcString);
                 if (!midiData || midiData.length === 0) {
                     throw new Error('MIDIデータが空です。文法を確認してください。');
                 }
@@ -754,12 +704,12 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         });
 
         // ========================================================================
-        //  起動（すべて try-catch で保護）
+        //  起動
         // ========================================================================
 
         try {
             initLibrary();
-            console.log('✅ 安全読み込み版 起動（document.write 不使用）');
+            console.log('✅ iframe 方式で起動（ページは壊れません）');
         } catch (e) {
             console.error('起動エラー:', e);
             setStatus('error', '起動エラー: ' + e.message, 'エラー');
