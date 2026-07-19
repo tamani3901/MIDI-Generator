@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ABC → MIDI コンバーター</title>
-    <!-- ★ オンラインCDNからabcjsを自動読み込み（ダウンロード不要） ★ -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js"></script>
+    <!-- ★ 機能をフル装備した「abcjs-full.min.js」に変更 ★ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-full.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -179,6 +179,10 @@
             color: #14532d;
             border: 1px solid #86efac;
         }
+        /* 画面裏でパースするために使う隠し要素 */
+        #hidden-notation {
+            display: none;
+        }
         .footer {
             margin-top: 2.5rem;
             padding-top: 1.2rem;
@@ -194,7 +198,7 @@
     <div class="container">
 
         <h1>🎵 ABC → MIDI</h1>
-        <p class="sub">オンライン配信方式（データ互換性バグ修正版）</p>
+        <p class="sub">オンライン配信方式（1バイトバグ完全修正版）</p>
 
         <!-- ステータス表示 -->
         <div id="statusBox" class="loading">
@@ -228,8 +232,11 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         <!-- メッセージ -->
         <div id="message"></div>
 
+        <!-- 内部処理用のダミー要素 -->
+        <div id="hidden-notation"></div>
+
         <div class="footer">
-            <span>📄 ABCJS CDN Cloud Loading - MIDI Hex Fix Enabled</span>
+            <span>📄 ABCJS Full Engine Loaded - Object Parsing Mode</span>
         </div>
 
     </div>
@@ -242,6 +249,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         const downloadLink = document.getElementById('downloadLink');
         const messageEl = document.getElementById('message');
         const abcInput = document.getElementById('abcInput');
+        const hiddenNotation = document.getElementById('hidden-notation');
 
         let abcjsLib = null;
 
@@ -267,14 +275,14 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             const lib = window.ABCJS || window.abcjs;
             if (lib && lib.synth) {
                 abcjsLib = lib;
-                setStatus('ready', '✅ abcjs ライブラリ読み込み完了！');
+                setStatus('ready', '✅ abcjs フル版 読み込み完了！');
                 convertBtn.disabled = false;
-                showMessage('success', '🎉 ライブラリの読み込みに成功しました！');
+                showMessage('success', '🎉 MIDI生成エンジンが利用可能です！');
                 return true;
             } else {
                 setStatus('error', '❌ abcjs が読み込まれていません');
                 convertBtn.disabled = true;
-                showMessage('error', '⚠️ abcjsが正しく読み込めませんでした。ネット接続を確認してください。');
+                showMessage('error', '⚠️ ライブラリの読み込みに失敗しました。');
                 return false;
             }
         }
@@ -284,7 +292,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         });
 
         // ========================================================================
-        //  変換処理 (MIDIヘッダー・バイナリバグ修正版)
+        //  変換処理 (Tuneオブジェクトパース対応版)
         // ========================================================================
         convertBtn.addEventListener('click', function() {
             if (!abcjsLib) return;
@@ -299,27 +307,38 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             }
 
             try {
-                // MIDIデータを生成
-                const midiResult = abcjsLib.synth.getMidiFile(abc, { lineEnd: "\n" });
+                // 【超重要】1. まずテキストを楽譜オブジェクト(Tune Object)にパースする
+                const visualObj = abcjsLib.renderAbc(hiddenNotation, abc);
+                
+                if (!visualObj || visualObj.length === 0) {
+                    throw new Error('ABC譜の解析に失敗しました。構文を確認してください。');
+                }
 
-                // どんなデータ型で返ってきても、確実な純粋バイナリ配列(Uint8Array)にする
+                // 【超重要】2. パースされたオブジェクト(visualObj[0])を渡してMIDIデータを生成する
+                const midiResult = abcjsLib.synth.getMidiFile(visualObj[0], { lineEnd: "\n" });
+
+                // データの整合性をチェックしてUint8Arrayに整える
                 let byteArray;
                 if (midiResult instanceof Uint8Array) {
                     byteArray = midiResult;
                 } else if (Array.isArray(midiResult)) {
                     byteArray = new Uint8Array(midiResult);
                 } else if (typeof midiResult === 'string') {
-                    // 文字列で壊れて返ってきた場合のエスケープ処理
                     const len = midiResult.length;
                     byteArray = new Uint8Array(len);
                     for (let i = 0; i < len; i++) {
                         byteArray[i] = midiResult.charCodeAt(i) & 0xff;
                     }
                 } else {
-                    throw new Error('MIDIデータの生成形式が不正です。');
+                    throw new Error('MIDIデータの生成に失敗しました（空データ）。');
                 }
 
-                // 正しいMIDI用のMIMEタイプを指定してBlobを作る
+                // ファイルサイズ確認（デバッグ用メッセージ）
+                if (byteArray.length <= 1) {
+                    throw new Error('生成されたMIDIデータが1バイトしかありません。楽譜データが正しくない可能性があります。');
+                }
+
+                // 正しいMIDI用MIMEタイプでBlobを作成
                 const blob = new Blob([byteArray], { type: 'audio/midi' });
                 const url = URL.createObjectURL(blob);
 
@@ -328,7 +347,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 downloadLink.style.display = 'inline-flex';
                 downloadLink.textContent = '⬇️ Download MIDI';
 
-                showMessage('success', '✅ 変換成功！ダウンロードボタンを押して保存してください。');
+                showMessage('success', `✅ 変換成功！ (サイズ: ${byteArray.length} バイト) ダウンロードしてください。`);
 
             } catch (e) {
                 console.error(e);
@@ -337,7 +356,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         });
 
         // ========================================================================
-        //  サンプル楽譜データ
+        //  サンプルデータ
         // ========================================================================
         const SAMPLES = {
             twinkle: `X:1\nT:きらきら星\nM:4/4\nL:1/8\nK:C\nC C G G | A A G2 | F F E E | D D C2 |`,
