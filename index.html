@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ABC → MIDI（3WAYフェイルセーフ版）</title>
+    <title>ABC → MIDI（確実動作・Blob URL + フォールバック）</title>
     <style>
         * {
             box-sizing: border-box;
@@ -269,25 +269,6 @@
         #debugInfo.show {
             display: block;
         }
-        .method-badge {
-            display: inline-block;
-            font-size: 0.7rem;
-            background: #3b82f6;
-            color: #fff;
-            padding: 0.1rem 0.5rem;
-            border-radius: 20px;
-            margin-left: 0.3rem;
-        }
-        .method-badge.success {
-            background: #22c55e;
-        }
-        .method-badge.fail {
-            background: #ef4444;
-        }
-        .method-badge.trying {
-            background: #facc15;
-            color: #000;
-        }
     </style>
 </head>
 <body>
@@ -295,7 +276,7 @@
     <div class="container">
 
         <h1>🎵 ABC → MIDI</h1>
-        <p class="sub">3つの読み込み方式で確実に動作（自動・アップロード・GitHub同梱）</p>
+        <p class="sub">アップロードした abcjs を確実に読み込む（Blob URL + フォールバック）</p>
 
         <!-- ステータス表示 -->
         <div id="statusBox" class="loading">
@@ -304,9 +285,9 @@
             <span id="methodInfo" class="badge">方式: -</span>
         </div>
 
-        <!-- ファイルアップロードエリア（方式2用） -->
+        <!-- ファイルアップロードエリア -->
         <div id="uploadArea" class="upload-area" style="display:none;">
-            <p style="font-weight:600; margin-bottom:0.5rem;">📂 自分でアップロード（方式2）</p>
+            <p style="font-weight:600; margin-bottom:0.5rem;">📂 abcjs ライブラリをアップロード</p>
             <label for="fileInput">📤 abcjs-basic.min.js を選択</label>
             <input type="file" id="fileInput" accept=".js">
             <div class="hint">
@@ -346,7 +327,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         <div id="debugInfo"></div>
 
         <div class="footer">
-            <span>🔹 方式1: GitHub同梱 → 方式2: アップロード保存 → 方式3: CDN自動読み込み</span>
+            <span>💾 ライブラリは localStorage に保存され、Blob URL で読み込まれます</span>
         </div>
 
     </div>
@@ -357,12 +338,6 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         // ========================================================================
 
         const STORAGE_KEY = 'abcjs_library_code';
-        const CDN_URLS = [
-            'https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js',
-            'https://cdn.jsdelivr.net/npm/abcjs@6.4.1/dist/abcjs-basic-min.js',
-            'https://unpkg.com/abcjs@6.4.1/dist/abcjs-basic-min.js'
-        ];
-        const LOCAL_FILE = 'abcjs-basic.min.js'; // 同じディレクトリのファイル
 
         // DOM
         const statusBox = document.getElementById('statusBox');
@@ -423,191 +398,160 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             messageEl.textContent = '';
         }
 
-        // ----- abcjs チェック -----
+        // ----- abcjs が使えるかチェック（window.ABCJS も含めて） -----
         function isAbcjsReady() {
-            return (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function');
+            // abcjs はグローバルに `abcjs` または `ABCJS` として公開される
+            return (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function') ||
+                (typeof ABCJS !== 'undefined' && typeof ABCJS.renderMidi === 'function');
+        }
+
+        // ----- 実際に使える abcjs オブジェクトを取得 -----
+        function getAbcjs() {
+            if (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function') return abcjs;
+            if (typeof ABCJS !== 'undefined' && typeof ABCJS.renderMidi === 'function') return ABCJS;
+            return null;
         }
 
         // ========================================================================
-        //  方式1: GitHub同梱ファイルを読み込む（<script src> で読み込み）
-        // ========================================================================
-
-        function tryLoadLocalFile() {
-            return new Promise((resolve) => {
-                debugLog('📁 方式1: GitHub同梱ファイルを試行中... (' + LOCAL_FILE + ')');
-                setStatus('loading', '方式1: 同梱ファイルを読み込み中…', '1/3 同梱');
-
-                // 既に読み込まれているかチェック
-                if (isAbcjsReady()) {
-                    debugLog('✅ 方式1: 既に abcjs が定義されています');
-                    libraryLoaded = true;
-                    loadMethod = '同梱ファイル（既存）';
-                    setStatus('ready', 'ライブラリ読み込み完了（同梱ファイル）', '1/3 同梱 ✅');
-                    resolve(true);
-                    return;
-                }
-
-                // script タグで読み込み
-                const script = document.createElement('script');
-                script.src = LOCAL_FILE;
-                script.async = false; // 順次実行
-
-                let resolved = false;
-
-                script.onload = function() {
-                    if (resolved) return;
-                    resolved = true;
-                    debugLog('✅ 方式1: script.onload 発火');
-                    setTimeout(() => {
-                        if (isAbcjsReady()) {
-                            libraryLoaded = true;
-                            loadMethod = '同梱ファイル';
-                            setStatus('ready', 'ライブラリ読み込み完了（同梱ファイル）', '1/3 同梱 ✅');
-                            resolve(true);
-                        } else {
-                            debugLog('⚠️ 方式1: onload したが abcjs が未定義');
-                            resolve(false);
-                        }
-                    }, 200);
-                };
-
-                script.onerror = function() {
-                    if (resolved) return;
-                    resolved = true;
-                    debugLog('❌ 方式1: ファイルが見つからないか読み込みエラー');
-                    resolve(false);
-                };
-
-                document.head.appendChild(script);
-
-                // タイムアウト（5秒）
-                setTimeout(() => {
-                    if (!resolved) {
-                        resolved = true;
-                        debugLog('⏰ 方式1: タイムアウト');
-                        resolve(false);
-                    }
-                }, 5000);
-            });
-        }
-
-        // ========================================================================
-        //  方式2: localStorage に保存されたコードを実行（textContent 埋め込み）
+        //  方式1: localStorage に保存されたコードを Blob URL で読み込む
         // ========================================================================
 
         function tryLoadFromStorage() {
             return new Promise((resolve) => {
                 const code = localStorage.getItem(STORAGE_KEY);
                 if (!code) {
-                    debugLog('❌ 方式2: localStorage にコードがありません');
+                    debugLog('❌ localStorage にコードがありません');
                     resolve(false);
                     return;
                 }
-                debugLog('📦 方式2: localStorage からコードを取得（サイズ: ' + code.length + ' 文字）');
-                setStatus('loading', '方式2: 保存済みコードを読み込み中…', '2/3 保存');
+                debugLog('📦 localStorage からコードを取得（サイズ: ' + code.length + ' 文字）');
+                setStatus('loading', 'Blob URL で読み込み中…', 'Blob URL');
 
                 try {
-                    // textContent 埋め込み
-                    const script = document.createElement('script');
-                    script.textContent = code;
-                    document.head.appendChild(script);
-                    debugLog('✅ 方式2: script.textContent で埋め込み実行');
-
-                    // 即座にチェック
-                    if (isAbcjsReady()) {
-                        libraryLoaded = true;
-                        loadMethod = 'アップロード保存 (localStorage)';
-                        setStatus('ready', 'ライブラリ読み込み完了（保存済み）', '2/3 保存 ✅');
-                        resolve(true);
-                        return;
-                    }
-
-                    // 少し待って再チェック
-                    setTimeout(() => {
-                        if (isAbcjsReady()) {
-                            libraryLoaded = true;
-                            loadMethod = 'アップロード保存 (localStorage)';
-                            setStatus('ready', 'ライブラリ読み込み完了（保存済み）', '2/3 保存 ✅');
-                            resolve(true);
-                        } else {
-                            debugLog('❌ 方式2: 実行後も abcjs が未定義');
-                            // 壊れている可能性があるので削除
-                            localStorage.removeItem(STORAGE_KEY);
-                            resolve(false);
-                        }
-                    }, 300);
-
-                } catch (e) {
-                    debugLog('❌ 方式2: エラー - ' + e.message);
-                    localStorage.removeItem(STORAGE_KEY);
-                    resolve(false);
-                }
-            });
-        }
-
-        // ========================================================================
-        //  方式3: CDNから自動読み込み（複数CDNをフォールバック）
-        // ========================================================================
-
-        function tryLoadCDN() {
-            return new Promise((resolve) => {
-                let cdnIndex = 0;
-
-                function loadNextCDN() {
-                    if (cdnIndex >= CDN_URLS.length) {
-                        debugLog('❌ 方式3: 全てのCDNが失敗しました');
-                        resolve(false);
-                        return;
-                    }
-
-                    const url = CDN_URLS[cdnIndex];
-                    cdnIndex++;
-                    debugLog('🌐 方式3: CDN ' + cdnIndex + '/' + CDN_URLS.length + ' を試行: ' + url);
-                    setStatus('loading', '方式3: CDNから読み込み中 (' + cdnIndex + '/' + CDN_URLS.length + ')', '3/3 CDN');
+                    // Blob を作成して URL 生成
+                    const blob = new Blob([code], { type: 'application/javascript' });
+                    const url = URL.createObjectURL(blob);
+                    debugLog('🔗 Blob URL を作成: ' + url);
 
                     const script = document.createElement('script');
                     script.src = url;
-                    script.async = false;
+                    script.type = 'text/javascript'; // 明示的に指定
+                    script.async = false; // 同期的に実行
 
                     let resolved = false;
 
                     script.onload = function() {
                         if (resolved) return;
                         resolved = true;
-                        debugLog('✅ 方式3: script.onload 発火');
+                        debugLog('✅ script.onload 発火');
                         setTimeout(() => {
                             if (isAbcjsReady()) {
                                 libraryLoaded = true;
-                                loadMethod = 'CDN (' + url + ')';
-                                setStatus('ready', 'ライブラリ読み込み完了（CDN）', '3/3 CDN ✅');
+                                loadMethod = 'Blob URL (localStorage)';
+                                setStatus('ready', 'ライブラリ読み込み完了（Blob URL）', 'Blob URL ✅');
                                 resolve(true);
                             } else {
-                                debugLog('⚠️ 方式3: onload したが abcjs が未定義 → 次のCDNへ');
-                                loadNextCDN();
+                                debugLog('⚠️ onload したが abcjs が未定義 → フォールバックへ');
+                                resolve(false);
                             }
-                        }, 300);
+                        }, 200);
                     };
 
                     script.onerror = function() {
                         if (resolved) return;
                         resolved = true;
-                        debugLog('❌ 方式3: CDN読み込みエラー → 次のCDNへ');
-                        loadNextCDN();
+                        debugLog('❌ Blob URL 読み込みエラー');
+                        resolve(false);
                     };
 
                     document.head.appendChild(script);
 
-                    // タイムアウト（8秒）
+                    // タイムアウト（5秒）
                     setTimeout(() => {
                         if (!resolved) {
                             resolved = true;
-                            debugLog('⏰ 方式3: タイムアウト → 次のCDNへ');
-                            loadNextCDN();
+                            debugLog('⏰ Blob URL タイムアウト');
+                            resolve(false);
                         }
-                    }, 8000);
-                }
+                    }, 5000);
 
-                loadNextCDN();
+                } catch (e) {
+                    debugLog('❌ Blob URL 作成エラー: ' + e.message);
+                    resolve(false);
+                }
+            });
+        }
+
+        // ========================================================================
+        //  方式2: フォールバック – document.write で強制的に埋め込む
+        // ========================================================================
+
+        function tryLoadWithDocumentWrite() {
+            return new Promise((resolve) => {
+                const code = localStorage.getItem(STORAGE_KEY);
+                if (!code) {
+                    debugLog('❌ フォールバック: localStorage にコードがありません');
+                    resolve(false);
+                    return;
+                }
+                debugLog('📦 フォールバック: document.write で埋め込みを試行');
+                setStatus('loading', 'フォールバック (document.write) を試行中…', 'フォールバック');
+
+                try {
+                    // 一時的に document.write をオーバーライドしてスクリプトを埋め込む
+                    const scriptContent = '<script type="text/javascript">' + code + '<\/script>';
+                    document.write(scriptContent);
+                    // document.write は即座に実行されるので、すぐにチェック
+                    setTimeout(() => {
+                        if (isAbcjsReady()) {
+                            libraryLoaded = true;
+                            loadMethod = 'document.write (フォールバック)';
+                            setStatus('ready', 'ライブラリ読み込み完了（フォールバック）', 'フォールバック ✅');
+                            resolve(true);
+                        } else {
+                            debugLog('❌ フォールバックでも abcjs が定義されませんでした');
+                            resolve(false);
+                        }
+                    }, 300);
+                } catch (e) {
+                    debugLog('❌ フォールバックエラー: ' + e.message);
+                    resolve(false);
+                }
+            });
+        }
+
+        // ========================================================================
+        //  方式3: 最終手段 – window.eval (非推奨だが確実)
+        // ========================================================================
+
+        function tryLoadWithEval() {
+            return new Promise((resolve) => {
+                const code = localStorage.getItem(STORAGE_KEY);
+                if (!code) {
+                    debugLog('❌ eval フォールバック: localStorage にコードがありません');
+                    resolve(false);
+                    return;
+                }
+                debugLog('📦 eval フォールバック: window.eval を試行');
+                setStatus('loading', '最終手段 (eval) を試行中…', 'eval');
+
+                try {
+                    window.eval(code);
+                    setTimeout(() => {
+                        if (isAbcjsReady()) {
+                            libraryLoaded = true;
+                            loadMethod = 'eval (最終手段)';
+                            setStatus('ready', 'ライブラリ読み込み完了（eval）', 'eval ✅');
+                            resolve(true);
+                        } else {
+                            debugLog('❌ eval でも abcjs が定義されませんでした');
+                            resolve(false);
+                        }
+                    }, 200);
+                } catch (e) {
+                    debugLog('❌ eval エラー: ' + e.message);
+                    resolve(false);
+                }
             });
         }
 
@@ -634,40 +578,54 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 return;
             }
 
-            // ---- 方式1: 同梱ファイル ----
-            const ok1 = await tryLoadLocalFile();
-            if (ok1) {
-                convertBtn.disabled = false;
-                clearStorageBtn.style.display = localStorage.getItem(STORAGE_KEY) ? 'inline-flex' : 'none';
+            const hasStored = localStorage.getItem(STORAGE_KEY) !== null;
+            if (!hasStored) {
+                setStatus('warning', 'ライブラリがありません。ファイルをアップロードしてください。', 'なし');
+                uploadArea.style.display = 'block';
+                convertBtn.disabled = true;
+                clearStorageBtn.style.display = 'none';
+                retryBtn.style.display = 'none';
                 return;
             }
 
-            // ---- 方式2: localStorage ----
-            const ok2 = await tryLoadFromStorage();
+            // ---- 方式1: Blob URL ----
+            const ok1 = await tryLoadFromStorage();
+            if (ok1) {
+                convertBtn.disabled = false;
+                clearStorageBtn.style.display = 'inline-flex';
+                uploadArea.style.display = 'none';
+                return;
+            }
+
+            // ---- 方式2: document.write ----
+            const ok2 = await tryLoadWithDocumentWrite();
             if (ok2) {
                 convertBtn.disabled = false;
                 clearStorageBtn.style.display = 'inline-flex';
+                uploadArea.style.display = 'none';
                 return;
             }
 
-            // ---- 方式3: CDN ----
-            const ok3 = await tryLoadCDN();
+            // ---- 方式3: eval ----
+            const ok3 = await tryLoadWithEval();
             if (ok3) {
                 convertBtn.disabled = false;
-                clearStorageBtn.style.display = localStorage.getItem(STORAGE_KEY) ? 'inline-flex' : 'none';
+                clearStorageBtn.style.display = 'inline-flex';
+                uploadArea.style.display = 'none';
                 return;
             }
 
             // ---- 全て失敗 ----
-            setStatus('error', '全ての読み込み方式が失敗しました。ファイルをアップロードしてください。', '❌ 全滅');
+            setStatus('error', '全ての読み込み方式が失敗しました。ファイルが壊れているか、保存データが不正です。', '❌ 全滅');
             uploadArea.style.display = 'block';
             convertBtn.disabled = true;
             retryBtn.style.display = 'inline-flex';
-            showMessage('error', '❌ ライブラリを読み込めませんでした。下の「ファイルを選択」から abcjs をアップロードするか、ページを再読み込みして再試行してください。');
+            clearStorageBtn.style.display = 'none';
+            showMessage('error', '❌ ライブラリを読み込めませんでした。ファイルを再アップロードしてください。');
         }
 
         // ========================================================================
-        //  ファイルアップロード（方式2 手動）
+        //  ファイルアップロード
         // ========================================================================
 
         function handleFileUpload(file) {
@@ -684,29 +642,21 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
 
                     localStorage.setItem(STORAGE_KEY, code);
                     debugLog('💾 localStorage に保存しました');
+                    showMessage('info', '💾 保存しました。ライブラリを読み込み中…');
 
                     // すぐに読み込みを試行
-                    const script = document.createElement('script');
-                    script.textContent = code;
-                    document.head.appendChild(script);
-
-                    setTimeout(() => {
+                    initLibrary().then(() => {
                         if (isAbcjsReady()) {
-                            libraryLoaded = true;
-                            loadMethod = 'アップロード（手動）';
-                            setStatus('ready', 'ライブラリ読み込み完了（アップロード）', 'アップロード ✅');
-                            convertBtn.disabled = false;
-                            clearStorageBtn.style.display = 'inline-flex';
+                            showMessage('success', '✅ ライブラリの読み込みに成功しました！');
                             uploadArea.style.display = 'none';
-                            showMessage('success', '✅ アップロード成功！ 変換が使えます。');
-                            hideMessage();
                         } else {
-                            showMessage('error', '❌ アップロード後も abcjs が定義されません。ファイルが壊れている可能性があります。');
+                            showMessage('error', '❌ 保存はできましたが、読み込みに失敗しました。');
                         }
-                    }, 300);
+                    });
 
                 } catch (err) {
                     showMessage('error', '❌ ファイル処理エラー: ' + err.message);
+                    debugLog('❌ 例外: ' + err.message);
                 }
             };
             reader.onerror = function() {
@@ -735,6 +685,8 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 setStatus('warning', '保存済みライブラリを削除しました', '削除');
                 // abcjs はそのまま残るが、削除ボタンは消す
                 showMessage('info', '🗑️ 保存データを削除しました。次回アクセス時は再アップロードが必要です。');
+                // ページをリロードしてリセット
+                location.reload();
             }
         });
 
@@ -746,7 +698,8 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
 
         // 変換
         convertBtn.addEventListener('click', function() {
-            if (!isAbcjsReady()) {
+            const abcjsLib = getAbcjs();
+            if (!abcjsLib) {
                 showMessage('error', '❌ ライブラリが読み込まれていません。');
                 return;
             }
@@ -761,7 +714,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             }
 
             try {
-                const midiData = abcjs.renderMidi(abc);
+                const midiData = abcjsLib.renderMidi(abc);
                 if (!midiData || midiData.length === 0) {
                     throw new Error('MIDIデータが空です。文法を確認してください。');
                 }
@@ -812,8 +765,8 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         // ========================================================================
 
         initLibrary();
-        console.log('✅ 3WAYフェイルセーフ版 起動');
-        console.log('📌 方式1: 同梱ファイル → 方式2: localStorage → 方式3: CDN');
+        console.log('✅ 確実読み込み版 起動');
+        console.log('📌 方式1: Blob URL → 方式2: document.write → 方式3: eval');
     </script>
 
 </body>
