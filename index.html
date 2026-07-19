@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ABC → MIDI 変換</title>
+    <!-- abcjs ライブラリ（CDN） -->
+    <script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.1/dist/abcjs-basic-min.js">
+    </script>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            background: #f8f9fa;
+            color: #212529;
+        }
+        h1 {
+            font-size: 1.8rem;
+            border-bottom: 2px solid #0d6efd;
+            padding-bottom: 0.3rem;
+        }
+        textarea {
+            width: 100%;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95rem;
+            padding: 0.6rem;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            box-sizing: border-box;
+            resize: vertical;
+        }
+        .actions {
+            margin: 1rem 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+            align-items: center;
+        }
+        button {
+            background: #0d6efd;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 0.6rem 1.4rem;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #0b5ed7;
+        }
+        a {
+            display: inline-block;
+            background: #28a745;
+            color: #fff;
+            padding: 0.6rem 1.4rem;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+        a:hover {
+            background: #218838;
+        }
+        .error {
+            color: #dc3545;
+            margin-top: 0.5rem;
+            font-weight: 500;
+        }
+        .sample {
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        .sample span {
+            color: #0d6efd;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        .sample span:hover {
+            color: #0a58ca;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🎵 ABC → MIDI 変換</h1>
+    <p>ABC記述法で書かれた楽譜を MIDI ファイルに変換します。</p>
+
+    <textarea id="abcInput" rows="12" placeholder="ここにABC譜を入力してください…">
+X:1
+T:メロディー例
+M:4/4
+L:1/8
+K:C
+C D E F | G A B c |]
+    </textarea>
+
+    <div class="sample">
+        💡 サンプル:
+        <span onclick="loadSample('twinkle')">きらきら星</span> ・
+        <span onclick="loadSample('scale')">音階</span> ・
+        <span onclick="loadSample('chord')">コード進行</span>
+    </div>
+
+    <div class="actions">
+        <button id="convertBtn">🔄 Convert to MIDI</button>
+        <a id="downloadLink" style="display:none;">⬇️ Download MIDI</a>
+    </div>
+
+    <div id="errorMsg" class="error"></div>
+
+    <script>
+        // ----- サンプルデータ -----
+        const samples = {
+            twinkle: `X:1
+        T:きらきら星
+        M:4/4
+        L:1/8
+        K:C
+        C C G G | A A G2 | F F E E | D D C2 |`,
+
+            scale: `X:1
+        T:ハ長調音階（上行・下行）
+        M:4/4
+        L:1/8
+        K:C
+        C D E F | G A B c | c B A G | F E D C |`,
+
+            chord: `X:1
+        T:コード進行（C - G - Am - F）
+        M:4/4
+        L:1/4
+        K:C
+        "C" C2 E2 | "G" G2 B2 | "Am" A2 c2 | "F" F2 A2 |`
+        };
+
+        function loadSample(name) {
+            document.getElementById('abcInput').value = samples[name] || '';
+            document.getElementById('errorMsg').textContent = '';
+            document.getElementById('downloadLink').style.display = 'none';
+        }
+
+        // ----- 変換処理 -----
+        document.getElementById('convertBtn').addEventListener('click', function() {
+            const abc = document.getElementById('abcInput').value.trim();
+            const errorEl = document.getElementById('errorMsg');
+            const link = document.getElementById('downloadLink');
+
+            errorEl.textContent = '';
+            link.style.display = 'none';
+
+            if (!abc) {
+                errorEl.textContent = '⚠️ ABC譜を入力してください。';
+                return;
+            }
+
+            try {
+                // abcjs.renderMidi は Uint8Array または ArrayBuffer を返す
+                const midiData = abcjs.renderMidi(abc);
+
+                // 戻り値が null や undefined の場合はエラー
+                if (!midiData) {
+                    throw new Error('MIDIデータが生成されませんでした。ABCの文法を確認してください。');
+                }
+
+                // バイナリデータを Blob に変換
+                const blob = new Blob([midiData], { type: 'audio/midi' });
+                const url = URL.createObjectURL(blob);
+
+                link.href = url;
+                link.download = 'output.mid';
+                link.style.display = 'inline-block';
+                link.textContent = '⬇️ Download MIDI';
+
+                // 少ししてからエラーメッセージをクリア
+                errorEl.textContent = '✅ 変換成功！ ダウンロードリンクをクリックしてください。';
+                errorEl.style.color = '#28a745';
+
+                // 古いURLを解放（メモリ対策）
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+            } catch (e) {
+                errorEl.style.color = '#dc3545';
+                errorEl.textContent = '❌ エラー: ' + (e.message || '不明なエラー');
+                console.error(e);
+            }
+        });
+
+        // デフォルトでサンプルをロード（初回表示用）
+        window.addEventListener('load', () => {
+            loadSample('twinkle');
+        });
+    </script>
+
+</body>
+</html>
