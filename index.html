@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ABC → MIDI コンバーター</title>
-    <!-- ★ オンラインから自動で読み込むように変更（ダウンロード不要） ★ -->
+    <!-- ★ オンラインCDNからabcjsを自動読み込み（ダウンロード不要） ★ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js"></script>
     <style>
         * {
@@ -194,7 +194,7 @@
     <div class="container">
 
         <h1>🎵 ABC → MIDI</h1>
-        <p class="sub">オンラインCDN方式（確実に動作）</p>
+        <p class="sub">オンライン配信方式（データ互換性バグ修正版）</p>
 
         <!-- ステータス表示 -->
         <div id="statusBox" class="loading">
@@ -229,7 +229,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         <div id="message"></div>
 
         <div class="footer">
-            <span>📄 ABCJS CDN Cloud loading</span>
+            <span>📄 ABCJS CDN Cloud Loading - MIDI Hex Fix Enabled</span>
         </div>
 
     </div>
@@ -262,10 +262,9 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             statusText.textContent = msg;
         }
 
-        // ライブラリ読み込み確認
+        // ライブラリ読み込みチェック
         function checkLibrary() {
             const lib = window.ABCJS || window.abcjs;
-            // synthオブジェクトが存在するかチェック
             if (lib && lib.synth) {
                 abcjsLib = lib;
                 setStatus('ready', '✅ abcjs ライブラリ読み込み完了！');
@@ -275,7 +274,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             } else {
                 setStatus('error', '❌ abcjs が読み込まれていません');
                 convertBtn.disabled = true;
-                showMessage('error', '⚠️ abcjsライブラリが正しく読み込めませんでした。ネット接続を確認してください。');
+                showMessage('error', '⚠️ abcjsが正しく読み込めませんでした。ネット接続を確認してください。');
                 return false;
             }
         }
@@ -285,7 +284,7 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         });
 
         // ========================================================================
-        //  変換処理 (正しいAPIに修正)
+        //  変換処理 (MIDIヘッダー・バイナリバグ修正版)
         // ========================================================================
         convertBtn.addEventListener('click', function() {
             if (!abcjsLib) return;
@@ -300,15 +299,28 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             }
 
             try {
-                // ★ 正しいMIDIファイル生成APIに変更 ★
-                // abcjs.synth.getMidiFile(abcText, options) を使用します
-                const midiResult = abcjsLib.synth.getMidiFile(abc, {
-                    lineEnd: "\n"
-                });
+                // MIDIデータを生成
+                const midiResult = abcjsLib.synth.getMidiFile(abc, { lineEnd: "\n" });
 
-                // 生成されたデータは[Uint8Array]などのバイナリ配列、またはBase64で返ってくるケースがあるため
-                // Blobに変換してダウンロードURLを作ります
-                const blob = new Blob([midiResult], { type: 'audio/midi' });
+                // どんなデータ型で返ってきても、確実な純粋バイナリ配列(Uint8Array)にする
+                let byteArray;
+                if (midiResult instanceof Uint8Array) {
+                    byteArray = midiResult;
+                } else if (Array.isArray(midiResult)) {
+                    byteArray = new Uint8Array(midiResult);
+                } else if (typeof midiResult === 'string') {
+                    // 文字列で壊れて返ってきた場合のエスケープ処理
+                    const len = midiResult.length;
+                    byteArray = new Uint8Array(len);
+                    for (let i = 0; i < len; i++) {
+                        byteArray[i] = midiResult.charCodeAt(i) & 0xff;
+                    }
+                } else {
+                    throw new Error('MIDIデータの生成形式が不正です。');
+                }
+
+                // 正しいMIDI用のMIMEタイプを指定してBlobを作る
+                const blob = new Blob([byteArray], { type: 'audio/midi' });
                 const url = URL.createObjectURL(blob);
 
                 downloadLink.href = url;
@@ -316,16 +328,16 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
                 downloadLink.style.display = 'inline-flex';
                 downloadLink.textContent = '⬇️ Download MIDI';
 
-                showMessage('success', '✅ 変換成功！ ダウンロードボタンをクリックしてください。');
+                showMessage('success', '✅ 変換成功！ダウンロードボタンを押して保存してください。');
 
             } catch (e) {
                 console.error(e);
-                showMessage('error', '❌ 変換エラー: ' + (e.message || '不明なエラーが発生しました。'));
+                showMessage('error', '❌ 変換エラー: ' + (e.message || '不明なエラー'));
             }
         });
 
         // ========================================================================
-        //  サンプルデータ
+        //  サンプル楽譜データ
         // ========================================================================
         const SAMPLES = {
             twinkle: `X:1\nT:きらきら星\nM:4/4\nL:1/8\nK:C\nC C G G | A A G2 | F F E E | D D C2 |`,
