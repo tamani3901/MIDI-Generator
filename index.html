@@ -3,16 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ABC → MIDI 変換（完全版・複数CDNフォールバック）</title>
+    <title>ABC → MIDI（ローカルストレージ版）</title>
     <style>
-        /* ---------- リセット & ベース ---------- */
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
         }
         body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-family: 'Segoe UI', system-ui, sans-serif;
             background: #f1f5f9;
             color: #0f172a;
             padding: 2rem 1.5rem;
@@ -31,7 +30,6 @@
         h1 {
             font-size: 2.2rem;
             font-weight: 700;
-            letter-spacing: -0.02em;
             border-bottom: 4px solid #3b82f6;
             padding-bottom: 0.6rem;
             display: flex;
@@ -44,8 +42,6 @@
             margin-bottom: 1.8rem;
             font-size: 1rem;
         }
-
-        /* ---------- ステータス ---------- */
         #statusBox {
             padding: 0.75rem 1.25rem;
             border-radius: 12px;
@@ -55,7 +51,6 @@
             align-items: center;
             gap: 0.75rem;
             background: #f1f5f9;
-            color: #1e293b;
             border: 1px solid #e2e8f0;
         }
         #statusBox.loading {
@@ -73,14 +68,46 @@
             border-color: #f87171;
             color: #7f1d1d;
         }
+        #statusBox.warning {
+            background: #ffedd5;
+            border-color: #fb923c;
+            color: #7c2d12;
+        }
         #statusIcon {
             font-size: 1.4rem;
         }
-
-        /* ---------- テキストエリア ---------- */
+        .upload-area {
+            background: #f8fafc;
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .upload-area label {
+            display: inline-block;
+            background: #3b82f6;
+            color: #fff;
+            padding: 0.6rem 1.8rem;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .upload-area label:hover {
+            background: #2563eb;
+        }
+        .upload-area input[type="file"] {
+            display: none;
+        }
+        .upload-area .hint {
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: #64748b;
+        }
         textarea {
             width: 100%;
-            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-family: 'Courier New', monospace;
             font-size: 0.95rem;
             line-height: 1.6;
             padding: 1rem;
@@ -96,8 +123,6 @@
             box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
             outline: none;
         }
-
-        /* ---------- サンプルボタン ---------- */
         .sample-area {
             display: flex;
             flex-wrap: wrap;
@@ -122,8 +147,6 @@
         .sample-btn:active {
             transform: scale(0.96);
         }
-
-        /* ---------- アクション ---------- */
         .actions {
             display: flex;
             flex-wrap: wrap;
@@ -167,8 +190,13 @@
         .btn-success:hover {
             background: #16a34a;
         }
-
-        /* ---------- メッセージ ---------- */
+        .btn-danger {
+            background: #ef4444;
+            color: #fff;
+        }
+        .btn-danger:hover {
+            background: #dc2626;
+        }
         #message {
             margin-top: 1rem;
             padding: 0.75rem 1.25rem;
@@ -194,8 +222,6 @@
             color: #1e3a8a;
             border: 1px solid #93c5fd;
         }
-
-        /* ---------- フッター ---------- */
         .footer {
             margin-top: 2.5rem;
             padding-top: 1.2rem;
@@ -211,19 +237,9 @@
         .footer a:hover {
             text-decoration: underline;
         }
-
-        /* ---------- レスポンシブ ---------- */
-        @media (max-width: 600px) {
-            .container {
-                padding: 1.2rem;
-            }
-            h1 {
-                font-size: 1.6rem;
-            }
-            .btn {
-                padding: 0.6rem 1.4rem;
-                font-size: 0.9rem;
-            }
+        .clear-storage {
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
         }
     </style>
 </head>
@@ -232,23 +248,34 @@
     <div class="container">
 
         <h1>🎵 ABC → MIDI</h1>
-        <p class="sub">ABC記譜法で書かれた楽譜を MIDI ファイル (.mid) に変換します。</p>
+        <p class="sub">ABC記譜法 → MIDIファイル変換（ライブラリをブラウザに保存して利用）</p>
 
-        <!-- ライブラリ状態 -->
+        <!-- ステータス表示 -->
         <div id="statusBox" class="loading">
             <span id="statusIcon">⏳</span>
-            <span id="statusText">ライブラリを読み込み中…</span>
+            <span id="statusText">初期化中…</span>
         </div>
 
-        <!-- 入力 -->
+        <!-- ファイルアップロードエリア（初回のみ表示） -->
+        <div id="uploadArea" class="upload-area" style="display:none;">
+            <p style="font-weight:600; margin-bottom:0.5rem;">📂 abcjs ライブラリをアップロードしてください</p>
+            <label for="fileInput">📤 ファイルを選択 (abcjs-basic.min.js)</label>
+            <input type="file" id="fileInput" accept=".js">
+            <div class="hint">
+                ⚡ <a href="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js" target="_blank">ここからダウンロード</a> してアップロードするか、<br>
+                お手持ちの abcjs ファイルを選択してください（初回のみ）
+            </div>
+        </div>
+
+        <!-- ABC入力 -->
         <textarea id="abcInput" spellcheck="false">X:1
-T:きらきら星 (Twinkle Twinkle Little Star)
+T:きらきら星 (Twinkle Twinkle)
 M:4/4
 L:1/8
 K:C
 C C G G | A A G2 | F F E E | D D C2 |</textarea>
 
-        <!-- サンプル -->
+        <!-- サンプルボタン -->
         <div class="sample-area">
             <button class="sample-btn" data-sample="twinkle">✨ きらきら星</button>
             <button class="sample-btn" data-sample="scale">🎶 音階</button>
@@ -261,52 +288,47 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         <div class="actions">
             <button id="convertBtn" class="btn btn-primary" disabled>🔄 Convert to MIDI</button>
             <a id="downloadLink" class="btn btn-success" style="display:none;">⬇️ Download MIDI</a>
+            <button id="clearStorageBtn" class="btn btn-danger" style="display:none;">🗑️ 保存済みライブラリを削除</button>
         </div>
 
-        <!-- 結果メッセージ -->
+        <!-- メッセージ -->
         <div id="message"></div>
 
         <div class="footer">
-            <span>⚡ 複数のCDNからライブラリを自動読み込み（フォールバック対応） • </span>
-            <span>GitHub Pages で動作確認済み</span>
+            <span>💾 ライブラリはブラウザのローカルストレージに保存されます（初回のみアップロード）</span>
         </div>
 
     </div>
 
     <script>
         // ========================================================================
-        //  1.  abcjs ライブラリを 複数のCDN から動的に読み込む（フォールバック）
+        //  1.  ローカルストレージから abcjs を読み込む / 保存する
         // ========================================================================
 
-        // 読み込み元リスト（優先順位順）
-        const CDN_LIST = [
-            'https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.1/abcjs-basic.min.js',
-            'https://cdn.jsdelivr.net/npm/abcjs@6.4.1/dist/abcjs-basic-min.js',
-            'https://unpkg.com/abcjs@6.4.1/dist/abcjs-basic-min.js'
-        ];
-
-        let cdnIndex = 0; // 現在試行中のCDNインデックス
-        let libReady = false; // ライブラリがロード済みか
+        const STORAGE_KEY = 'abcjs_library_code';
 
         // DOM 要素
         const statusBox = document.getElementById('statusBox');
         const statusIcon = document.getElementById('statusIcon');
         const statusText = document.getElementById('statusText');
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
         const convertBtn = document.getElementById('convertBtn');
         const downloadLink = document.getElementById('downloadLink');
+        const clearStorageBtn = document.getElementById('clearStorageBtn');
         const messageEl = document.getElementById('message');
         const abcInput = document.getElementById('abcInput');
 
-        // ----- ステータス表示を更新 -----
+        // ----- ステータス表示 -----
         function setStatus(state, msg) {
-            statusBox.className = state; // 'loading' / 'ready' / 'error'
-            if (state === 'loading') {
-                statusIcon.textContent = '⏳';
-            } else if (state === 'ready') {
-                statusIcon.textContent = '✅';
-            } else if (state === 'error') {
-                statusIcon.textContent = '❌';
-            }
+            statusBox.className = state;
+            const icons = {
+                'loading': '⏳',
+                'ready': '✅',
+                'error': '❌',
+                'warning': '⚠️'
+            };
+            statusIcon.textContent = icons[state] || 'ℹ️';
             statusText.textContent = msg;
         }
 
@@ -326,88 +348,138 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             return (typeof abcjs !== 'undefined' && typeof abcjs.renderMidi === 'function');
         }
 
-        // ----- ライブラリ読み込み成功時の処理 -----
-        function onLibraryLoaded() {
-            libReady = true;
-            setStatus('ready', 'ライブラリ読み込み完了 (abcjs v' + (abcjs.version || '') + ')');
-            convertBtn.disabled = false;
-            hideMessage();
-            // ダウンロードリンクは一旦非表示
-            downloadLink.style.display = 'none';
-        }
-
-        // ----- ライブラリ読み込み失敗時の処理（次のCDNを試す） -----
-        function onLibraryError() {
-            cdnIndex++;
-            if (cdnIndex < CDN_LIST.length) {
-                // 次のCDNを試す
-                const nextSrc = CDN_LIST[cdnIndex];
-                setStatus('loading', 'CDN ' + (cdnIndex + 1) + '/' + CDN_LIST.length + ' を試行中: ' + nextSrc);
-                loadScript(nextSrc, onLibraryLoaded, onLibraryError);
-            } else {
-                // すべてのCDNが失敗
-                setStatus('error', 'すべてのCDNからライブラリを読み込めませんでした。ネットワーク接続を確認し、ページを再読み込みしてください。');
-                convertBtn.disabled = true;
-                showMessage('error', '⚠️ ライブラリの読み込みに失敗しました。インターネット接続を確認するか、ブラウザの拡張機能を一時無効にして再読み込みしてください。');
+        // ----- 保存済みライブラリを eval で実行 -----
+        function loadLibraryFromStorage() {
+            const code = localStorage.getItem(STORAGE_KEY);
+            if (!code) {
+                return false;
+            }
+            try {
+                // 保存されたコードを実行（これで abcjs がグローバルに定義される）
+                eval(code);
+                if (isAbcjsReady()) {
+                    setStatus('ready', 'ライブラリをローカルストレージから読み込みました (abcjs v' + (abcjs.version || '') + ')');
+                    convertBtn.disabled = false;
+                    clearStorageBtn.style.display = 'inline-flex';
+                    uploadArea.style.display = 'none';
+                    hideMessage();
+                    return true;
+                } else {
+                    // コードはあったけど abcjs が定義されなかった（破損の可能性）
+                    localStorage.removeItem(STORAGE_KEY);
+                    return false;
+                }
+            } catch (e) {
+                console.error('eval エラー:', e);
+                localStorage.removeItem(STORAGE_KEY);
+                return false;
             }
         }
 
-        // ----- スクリプトを動的にロード -----
-        function loadScript(src, onSuccess, onError) {
-            const script = document.createElement('script');
-            script.src = src;
-            script.async = true;
-            script.onload = function() {
-                // ロード後、実際に abcjs が定義されているか確認
-                if (isAbcjsReady()) {
-                    onSuccess();
-                } else {
-                    // ロードは成功したが abcjs がまだ未定義の場合（まれ）
-                    // 少し待ってから再チェック
-                    setTimeout(function() {
-                        if (isAbcjsReady()) {
-                            onSuccess();
-                        } else {
-                            onError();
-                        }
-                    }, 300);
+        // ----- ファイルをアップロードして localStorage に保存 -----
+        function handleFileUpload(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const code = e.target.result;
+                    // 簡易チェック：abcjs という文字列が含まれているか
+                    if (!code.includes('abcjs')) {
+                        showMessage('error', '⚠️ アップロードされたファイルは abcjs ライブラリではないようです。正しいファイルを選択してください。');
+                        return;
+                    }
+                    // localStorage に保存
+                    localStorage.setItem(STORAGE_KEY, code);
+                    // すぐに読み込んで使えるようにする
+                    const loaded = loadLibraryFromStorage();
+                    if (loaded) {
+                        showMessage('success', '✅ ライブラリを保存し、読み込みに成功しました！ これで変換が使えます。');
+                        uploadArea.style.display = 'none';
+                    } else {
+                        showMessage('error', '❌ 保存はできましたが、読み込みに失敗しました。ファイルが壊れている可能性があります。');
+                    }
+                } catch (err) {
+                    showMessage('error', '❌ ファイルの読み込み中にエラーが発生しました: ' + err.message);
                 }
             };
-            script.onerror = function() {
-                onError();
+            reader.onerror = function() {
+                showMessage('error', '❌ ファイルの読み込みに失敗しました。');
             };
-            document.head.appendChild(script);
+            reader.readAsText(file);
         }
 
-        // ----- ライブラリ読み込みを開始 -----
-        function startLibraryLoad() {
-            const firstSrc = CDN_LIST[0];
-            setStatus('loading', 'CDN 1/' + CDN_LIST.length + ' を読み込み中: ' + firstSrc);
-            loadScript(firstSrc, onLibraryLoaded, onLibraryError);
-        }
-
-        // ページ読み込み後に開始
-        window.addEventListener('load', function() {
-            // すでにグローバルに abcjs が存在する場合（例：直接scriptタグで読み込んだ場合）
-            if (isAbcjsReady()) {
-                onLibraryLoaded();
-                return;
-            }
-            // 存在しない場合は動的ロード開始
-            startLibraryLoad();
-        });
-
-        // 手動再試行用（デバッグ時に console から呼べる）
-        window.retryLoad = function() {
-            cdnIndex = 0;
-            hideMessage();
-            downloadLink.style.display = 'none';
+        // ----- ライブラリを削除（リセット） -----
+        function clearLibrary() {
+            localStorage.removeItem(STORAGE_KEY);
+            setStatus('warning', 'ライブラリを削除しました。再度アップロードしてください。');
             convertBtn.disabled = true;
-            startLibraryLoad();
-        };
+            downloadLink.style.display = 'none';
+            clearStorageBtn.style.display = 'none';
+            uploadArea.style.display = 'block';
+            hideMessage();
+            // abcjs を undefined にする（実際には消せないが、再定義を防ぐため）
+            try { delete window.abcjs; } catch (e) { window.abcjs = undefined; }
+        }
 
         // ========================================================================
-        //  2.  サンプルデータ
+        //  2.  ページ初期化
+        // ========================================================================
+
+        function init() {
+            // まず localStorage に保存済みかチェック
+            const hasStored = localStorage.getItem(STORAGE_KEY) !== null;
+            if (hasStored) {
+                const loaded = loadLibraryFromStorage();
+                if (loaded) {
+                    // 成功
+                    uploadArea.style.display = 'none';
+                    clearStorageBtn.style.display = 'inline-flex';
+                    convertBtn.disabled = false;
+                    return;
+                } else {
+                    // 保存データが壊れていたので削除済み → アップロードを促す
+                    setStatus('warning', '保存データが壊れていたため削除しました。再度アップロードしてください。');
+                    uploadArea.style.display = 'block';
+                    convertBtn.disabled = true;
+                    clearStorageBtn.style.display = 'none';
+                    return;
+                }
+            } else {
+                // 初回アクセス → アップロードを促す
+                setStatus('warning', 'ライブラリがありません。下のボタンから abcjs ファイルをアップロードしてください。');
+                uploadArea.style.display = 'block';
+                convertBtn.disabled = true;
+                clearStorageBtn.style.display = 'none';
+                return;
+            }
+        }
+
+        // ========================================================================
+        //  3.  イベントリスナー
+        // ========================================================================
+
+        // ファイルアップロード
+        fileInput.addEventListener('change', function(e) {
+            if (this.files && this.files.length > 0) {
+                const file = this.files[0];
+                if (file.name.endsWith('.js') || file.type === 'application/javascript') {
+                    handleFileUpload(file);
+                } else {
+                    showMessage('error', '⚠️ .js ファイルを選択してください。');
+                }
+                // 同じファイルを再度選択できるようにリセット
+                this.value = '';
+            }
+        });
+
+        // ライブラリ削除
+        clearStorageBtn.addEventListener('click', function() {
+            if (confirm('保存されているライブラリを削除しますか？ 次回アクセス時に再アップロードが必要になります。')) {
+                clearLibrary();
+            }
+        });
+
+        // ========================================================================
+        //  4.  サンプルデータ
         // ========================================================================
 
         const SAMPLES = {
@@ -447,7 +519,6 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         "F7" F2 A2 c2 F2 | "Bb7" B2 d2 f2 B2 | "F7" F2 A2 c2 F2 | "C7" C2 E2 G2 C2 |`
         };
 
-        // サンプルボタンにイベントを設定
         document.querySelectorAll('.sample-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 const name = this.dataset.sample;
@@ -460,13 +531,12 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
         });
 
         // ========================================================================
-        //  3.  変換処理
+        //  5.  変換処理
         // ========================================================================
 
         convertBtn.addEventListener('click', function() {
-            // ライブラリが使えるか再確認
             if (!isAbcjsReady()) {
-                showMessage('error', '❌ ライブラリがまだ読み込まれていません。ページを再読み込みするか、コンソールで retryLoad() を実行してください。');
+                showMessage('error', '❌ ライブラリが読み込まれていません。ファイルをアップロードしてください。');
                 return;
             }
 
@@ -480,50 +550,40 @@ C C G G | A A G2 | F F E E | D D C2 |</textarea>
             }
 
             try {
-                // MIDIデータを生成 (renderMidi は Uint8Array を返す)
                 const midiData = abcjs.renderMidi(abc);
-
                 if (!midiData || midiData.length === 0) {
                     throw new Error('MIDIデータが空です。ABCの文法が正しいか確認してください。');
                 }
 
-                // Blob を作成
                 const blob = new Blob([midiData], { type: 'audio/midi' });
                 const url = URL.createObjectURL(blob);
 
-                // ダウンロードリンクを設定
                 downloadLink.href = url;
                 downloadLink.download = 'output.mid';
                 downloadLink.style.display = 'inline-flex';
                 downloadLink.textContent = '⬇️ Download MIDI';
 
-                showMessage('success', '✅ 変換成功！ ダウンロードリンクが表示されました。クリックしてMIDIファイルを保存してください。');
+                showMessage('success', '✅ 変換成功！ ダウンロードリンクが表示されました。');
 
-                // メモリ解放（5秒後）
                 setTimeout(function() {
                     URL.revokeObjectURL(url);
                 }, 5000);
 
             } catch (e) {
-                console.error('変換エラー詳細:', e);
-                showMessage('error', '❌ 変換エラー: ' + (e.message || '不明なエラーが発生しました。'));
+                console.error('変換エラー:', e);
+                showMessage('error', '❌ 変換エラー: ' + (e.message || '不明なエラー'));
             }
         });
 
-        // ダウンロードリンクをクリックしたらメッセージをクリアしても良い（オプション）
-        downloadLink.addEventListener('click', function() {
-            // 何もしないが、リンクは機能する
-        });
-
         // ========================================================================
-        //  4.  初期状態でサンプルをロード（デフォルトはきらきら星）
+        //  6.  起動
         // ========================================================================
 
-        // すでに textarea にデフォルト値が入っているので、あえて何もしない
-        // ただし、サンプルボタンで切り替えられるようにしておく
+        init();
 
-        console.log('✅ ABC → MIDI コンバーターが起動しました。');
-        console.log('📌 ライブラリが読み込まれない場合は、コンソールで retryLoad() を実行してください。');
+        console.log('✅ ABC → MIDI コンバーター (ローカルストレージ版) 起動');
+        console.log('📌 初回は abcjs ファイルをアップロードしてください。');
+        console.log('📌 アップロード後はブラウザに保存され、次回からは自動で使えます。');
     </script>
 
 </body>
