@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ABC → MIDI 変換</title>
-    <!-- abcjs ライブラリ（CDN） -->
-    <script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.1/dist/abcjs-basic-min.js">
+    <!-- abcjs ライブラリ（unpkg CDN に変更） -->
+    <script src="https://unpkg.com/abcjs@6.4.1/dist/abcjs-basic-min.js">
     </script>
     <style>
         body {
@@ -48,8 +48,12 @@
             cursor: pointer;
             transition: background 0.2s;
         }
-        button:hover {
+        button:hover:not(:disabled) {
             background: #0b5ed7;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
         a {
             display: inline-block;
@@ -69,6 +73,11 @@
             margin-top: 0.5rem;
             font-weight: 500;
         }
+        .success {
+            color: #28a745;
+            margin-top: 0.5rem;
+            font-weight: 500;
+        }
         .sample {
             margin-top: 0.5rem;
             font-size: 0.9rem;
@@ -82,12 +91,18 @@
         .sample span:hover {
             color: #0a58ca;
         }
+        #libStatus {
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
 
     <h1>🎵 ABC → MIDI 変換</h1>
     <p>ABC記述法で書かれた楽譜を MIDI ファイルに変換します。</p>
+
+    <div id="libStatus">⏳ ライブラリを読み込み中…</div>
 
     <textarea id="abcInput" rows="12" placeholder="ここにABC譜を入力してください…">
 X:1
@@ -106,13 +121,42 @@ C D E F | G A B c |]
     </div>
 
     <div class="actions">
-        <button id="convertBtn">🔄 Convert to MIDI</button>
+        <button id="convertBtn" disabled>🔄 Convert to MIDI</button>
         <a id="downloadLink" style="display:none;">⬇️ Download MIDI</a>
     </div>
 
     <div id="errorMsg" class="error"></div>
 
     <script>
+        // ----- ライブラリ読み込み確認 -----
+        const statusEl = document.getElementById('libStatus');
+        const convertBtn = document.getElementById('convertBtn');
+
+        function checkLibrary() {
+            if (typeof abcjs !== 'undefined' && abcjs.renderMidi) {
+                statusEl.innerHTML = '✅ ライブラリ読み込み完了（abcjs v' + (abcjs.version || '') + '）';
+                statusEl.style.color = '#28a745';
+                convertBtn.disabled = false;
+                return true;
+            } else {
+                statusEl.innerHTML = '❌ ライブラリが読み込めませんでした。ネットワーク接続を確認してください。';
+                statusEl.style.color = '#dc3545';
+                convertBtn.disabled = true;
+                return false;
+            }
+        }
+
+        // ページ読み込み後と、スクリプトロード後にチェック
+        window.addEventListener('load', function() {
+            // 少し待ってからチェック（CDN読み込みが非同期のため）
+            setTimeout(checkLibrary, 500);
+            // 念のためもう一度遅延チェック
+            setTimeout(checkLibrary, 1500);
+        });
+
+        // 手動でチェックする関数（デバッグ用）
+        window.checkAbcjs = checkLibrary;
+
         // ----- サンプルデータ -----
         const samples = {
             twinkle: `X:1
@@ -140,16 +184,25 @@ C D E F | G A B c |]
         function loadSample(name) {
             document.getElementById('abcInput').value = samples[name] || '';
             document.getElementById('errorMsg').textContent = '';
+            document.getElementById('errorMsg').className = 'error';
             document.getElementById('downloadLink').style.display = 'none';
         }
 
         // ----- 変換処理 -----
-        document.getElementById('convertBtn').addEventListener('click', function() {
+        convertBtn.addEventListener('click', function() {
+            // 再度ライブラリを確認（安全策）
+            if (!checkLibrary()) {
+                document.getElementById('errorMsg').textContent = '❌ ライブラリが利用できないため変換できません。';
+                document.getElementById('errorMsg').className = 'error';
+                return;
+            }
+
             const abc = document.getElementById('abcInput').value.trim();
             const errorEl = document.getElementById('errorMsg');
             const link = document.getElementById('downloadLink');
 
             errorEl.textContent = '';
+            errorEl.className = 'error';
             link.style.display = 'none';
 
             if (!abc) {
@@ -158,15 +211,13 @@ C D E F | G A B c |]
             }
 
             try {
-                // abcjs.renderMidi は Uint8Array または ArrayBuffer を返す
+                // abcjs.renderMidi を呼び出し
                 const midiData = abcjs.renderMidi(abc);
 
-                // 戻り値が null や undefined の場合はエラー
                 if (!midiData) {
                     throw new Error('MIDIデータが生成されませんでした。ABCの文法を確認してください。');
                 }
 
-                // バイナリデータを Blob に変換
                 const blob = new Blob([midiData], { type: 'audio/midi' });
                 const url = URL.createObjectURL(blob);
 
@@ -175,22 +226,20 @@ C D E F | G A B c |]
                 link.style.display = 'inline-block';
                 link.textContent = '⬇️ Download MIDI';
 
-                // 少ししてからエラーメッセージをクリア
                 errorEl.textContent = '✅ 変換成功！ ダウンロードリンクをクリックしてください。';
-                errorEl.style.color = '#28a745';
+                errorEl.className = 'success';
 
-                // 古いURLを解放（メモリ対策）
                 setTimeout(() => URL.revokeObjectURL(url), 5000);
 
             } catch (e) {
-                errorEl.style.color = '#dc3545';
+                errorEl.className = 'error';
                 errorEl.textContent = '❌ エラー: ' + (e.message || '不明なエラー');
                 console.error(e);
             }
         });
 
-        // デフォルトでサンプルをロード（初回表示用）
-        window.addEventListener('load', () => {
+        // デフォルトでサンプルをロード
+        window.addEventListener('load', function() {
             loadSample('twinkle');
         });
     </script>
